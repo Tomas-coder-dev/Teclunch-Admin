@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Personalizaciones adicionales */
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f9fafb; /* Añadido un color de fondo claro */
+}
+
+code {
+  font-family: 'Fira Code', monospace;
+  background-color: #f3f4f6; /* Añadido un fondo gris claro */
+  padding: 2px 4px; /* Añadido padding para mejor legibilidad */
+  border-radius: 4px; /* Añadido borde redondeado */
+}
+
