@@ -21,13 +21,16 @@ router.register(r'carrito', views.CarritoViewSet, basename='carrito')
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),  # Rutas de la API
-    
+
     # Endpoints de autenticación JWT (comentados temporalmente)
     # path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     # path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    
+
     # Autenticación de la API navegable de Django REST Framework
     path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
+
+    # Ruta para el Chatbot
+    path('chatbot/', views.ChatbotView.as_view(), name='chatbot'),
 ]
 
 # Para servir archivos de medios durante el desarrollo

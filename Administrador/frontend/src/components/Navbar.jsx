@@ -4,7 +4,7 @@ import styled from 'styled-components';
 import Button from './Button';
 import { AppBar, Toolbar, Box } from '@mui/material';
 import logo from '../assets/logo.png';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion'; // Una sola importación para motion y AnimatePresence
 import { Link } from 'react-router-dom';
 
 import HomeIcon from '@mui/icons-material/Home';
@@ -16,12 +16,14 @@ import MenuBookIcon from '@mui/icons-material/MenuBook';
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import ChatIcon from '@mui/icons-material/Chat';
 
+// Definir colores
 const colors = {
   primary: '#009FDB',
   secondary: '#FFA500',
   hover: '#FFB800',
 };
 
+// Variantes de animación
 const menuVariants = {
   hidden: { opacity: 0, height: 0, transition: { duration: 0.3, ease: 'easeInOut' } },
   visible: { opacity: 1, height: 'auto', transition: { duration: 0.3, ease: 'easeInOut' } },
@@ -36,6 +38,7 @@ const menuItemVariants = {
   }),
 };
 
+// Categorías del menú
 const categories = [
   { name: 'Inicio', icon: <HomeIcon />, path: '/' },
   { name: 'Usuarios', icon: <PeopleIcon />, path: '/usuarios' },
@@ -47,6 +50,11 @@ const categories = [
   { name: 'Chat', icon: <ChatIcon />, path: '/chat' },
 ];
 
+// Componentes personalizados de motion
+const MotionDiv = motion.create('div');
+const MotionImg = motion.create('img');
+const MotionLink = motion.create(Link);
+
 function Navbar() {
   const [clicked, setClicked] = useState(false);
 
@@ -57,17 +65,18 @@ function Navbar() {
     <NavContainer>
       <AppBar position="static" className="bg-primary shadow-lg">
         <Toolbar className="flex justify-between items-center relative">
-          <Logo
+          <MotionImg
             src={logo}
             alt="Logo"
-            as={motion.img}
             whileHover={{ scale: 1.1 }}
             transition={{ type: 'spring', stiffness: 300 }}
+            className="cursor-pointer h-16"
           />
 
+          {/* Menú para pantallas grandes */}
           <Box className="hidden md:flex flex-grow justify-center space-x-6">
             {categories.map((category, index) => (
-              <motion.div
+              <MotionDiv
                 key={category.name}
                 custom={index}
                 whileHover={{ scale: 1.1, color: colors.hover }}
@@ -77,18 +86,20 @@ function Navbar() {
                   <span className="mr-2">{category.icon}</span>
                   {category.name}
                 </StyledLink>
-              </motion.div>
+              </MotionDiv>
             ))}
           </Box>
 
+          {/* Botón de menú móvil */}
           <ButtonContainer>
             <Button clicked={clicked} handleClick={handleClick} />
           </ButtonContainer>
 
+          {/* Menú móvil */}
           <AnimatePresence>
             {clicked && (
               <MobileMenu
-                as={motion.div}
+                as={MotionDiv}
                 initial="hidden"
                 animate="visible"
                 exit="hidden"
@@ -100,7 +111,7 @@ function Navbar() {
                     to={category.path}
                     onClick={handleMenuItemClick}
                     custom={index}
-                    as={motion(Link)}
+                    as={MotionLink}
                     variants={menuItemVariants}
                   >
                     <span className="mr-2">{category.icon}</span>
@@ -118,15 +129,10 @@ function Navbar() {
 
 export default Navbar;
 
-// Styled Components
+// Estilos con Styled Components
 const NavContainer = styled.div`
   position: relative;
   z-index: 50;
-`;
-
-const Logo = styled.img`
-  height: 60px;
-  cursor: pointer;
 `;
 
 const ButtonContainer = styled.div`
@@ -149,7 +155,7 @@ const StyledLink = styled(Link)`
   }
 `;
 
-const MobileMenu = styled(motion.div)`
+const MobileMenu = styled(MotionDiv)`
   display: flex;
   flex-direction: column;
   position: absolute;
@@ -167,7 +173,7 @@ const MobileMenu = styled(motion.div)`
   }
 `;
 
-const MobileMenuItem = styled(motion(Link))`
+const MobileMenuItem = styled(MotionLink)`
   display: flex;
   align-items: center;
   color: #fff;

@@ -16,6 +16,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework import filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from rest_framework.views import APIView
+from django.conf import settings
+import openai
+import datetime
+import requests
 
 # ---------------------------
 # ViewSet para Usuario
@@ -267,3 +272,181 @@ class MultiplePedidoCreateViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
         pedidos = serializer.save()
         return Response(PedidoSerializer(pedidos, many=True).data, status=status.HTTP_201_CREATED)
+
+# ---------------------------
+# Vista para el Chatbot
+# ---------------------------
+class ChatbotView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+
+    def post(self, request):
+        try:
+            user_input = request.data.get('message')
+            if not user_input:
+                return Response({'error': 'No se proporcionó un mensaje'}, status=400)
+
+            if not getattr(settings, 'OPENAI_API_KEY', None):
+                return Response({'error': 'Clave de API de OpenAI no configurada'}, status=500)
+
+            # Obtener datos de items disponibles
+            items = Item.objects.filter(disponible=True).select_related('categoria')
+            if not items.exists():
+                return Response({'error': 'No hay ítems disponibles'}, status=404)
+
+            # Información de los items
+            items_info = []
+            categorias_dict = {}
+
+            for item in items:
+                # Modificar el nombre del item para mejorar la precisión
+                nombre_item = self.obtener_nombre_comida_para_api(item.nombre)
+
+                # Obtener información nutricional desde Edamam
+                nutricion = self.obtener_info_nutricional(nombre_item)
+                if nutricion:
+                    calorias = nutricion.get('calories', 'No disponible')
+                    nutrientes = nutricion.get('totalNutrients', {})
+                    proteinas = nutrientes.get('PROCNT', {}).get('quantity', 'No disponible')
+                    grasas = nutrientes.get('FAT', {}).get('quantity', 'No disponible')
+                    carbohidratos = nutrientes.get('CHOCDF', {}).get('quantity', 'No disponible')
+                else:
+                    calorias = proteinas = grasas = carbohidratos = 'No disponible'
+
+                # Obtener calificación promedio y total de votos
+                calificacion_promedio = item.get_calificacion_promedio()
+                total_votos = item.get_total_votos()
+
+                item_data = {
+                    'nombre': item.nombre,
+                    'calificacion_promedio': calificacion_promedio,
+                    'total_votos': total_votos,
+                    'categoria': item.categoria.nombre,
+                    'calorias': f"{calorias} kcal" if calorias != 'No disponible' else calorias,
+                    'descripcion': item.descripcion or 'Sin descripción',
+                    'nutrientes': {
+                        'proteinas': f"{proteinas:.1f} g" if isinstance(proteinas, (int, float)) else proteinas,
+                        'grasas': f"{grasas:.1f} g" if isinstance(grasas, (int, float)) else grasas,
+                        'carbohidratos': f"{carbohidratos:.1f} g" if isinstance(carbohidratos, (int, float)) else carbohidratos,
+                    },
+                }
+                items_info.append(item_data)
+
+                # Mejor calificación por categoría
+                categoria_nombre = item.categoria.nombre
+                if categoria_nombre not in categorias_dict or calificacion_promedio > categorias_dict[categoria_nombre]['calificacion_promedio']:
+                    categorias_dict[categoria_nombre] = item_data
+
+            # Formatear texto para el chatbot
+            items_texto = ""
+            for item in items_info:
+                estrellas_num = int(round(item['calificacion_promedio']))
+                estrellas = '★' * estrellas_num + '☆' * (5 - estrellas_num)
+                items_texto += f"### {item['nombre']} ({item['categoria']})\n"
+                items_texto += f"- **Calificación Promedio:** {estrellas} ({item['calificacion_promedio']:.1f} de 5)\n"
+                items_texto += f"- **Total de Votos:** {item['total_votos']}\n"
+                items_texto += f"- **Calorías:** {item['calorias']}\n"
+                items_texto += f"- **Nutrientes:**\n"
+                items_texto += f"  - Proteínas: {item['nutrientes']['proteinas']}\n"
+                items_texto += f"  - Grasas: {item['nutrientes']['grasas']}\n"
+                items_texto += f"  - Carbohidratos: {item['nutrientes']['carbohidratos']}\n"
+                items_texto += f"- **Descripción:** {item['descripcion']}\n\n"
+
+            # Información de los mejores items por categoría
+            mejores_items_texto = ""
+            for categoria, datos in categorias_dict.items():
+                estrellas_num = int(round(datos['calificacion_promedio']))
+                estrellas = '★' * estrellas_num + '☆' * (5 - estrellas_num)
+                mejores_items_texto += f"- **{categoria}:** {datos['nombre']} con calificación promedio de {estrellas} ({datos['calificacion_promedio']:.1f} de 5)\n"
+
+            fecha_actual = datetime.datetime.now().strftime("%d/%m/%Y")
+
+            # Analizar si el usuario solicita una tabla calórica
+            solicita_tabla_calorica = any(keyword in user_input.lower() for keyword in ['tabla calórica', 'tabla calorica', 'tabla de calorías', 'tabla de calorias'])
+
+            if solicita_tabla_calorica:
+                # Crear una tabla calórica detallada
+                tabla_calorica = (
+                    "| **Comida**           | **Calorías**   | **Proteínas**   | **Grasas**      | **Carbohidratos** |\n"
+                    "|----------------------|---------------:|----------------:|----------------:|------------------:|\n"
+                )
+                for item in items_info:
+                    tabla_calorica += (
+                        f"| {item['nombre']:<20} | {item['calorias']:<13} | "
+                        f"{item['nutrientes']['proteinas']:<14} | {item['nutrientes']['grasas']:<14} | "
+                        f"{item['nutrientes']['carbohidratos']:<17} |\n"
+                    )
+
+                assistant_response = f"### Tabla Calórica de Comidas Disponibles\n\n{tabla_calorica}"
+                return Response({'response': assistant_response})
+
+            else:
+                # Crear el mensaje para la IA
+                system_prompt = (
+                    "Eres un asistente culinario experto que ayuda a los usuarios brindando información detallada sobre las comidas disponibles. "
+                    "Cuando proporciones información, organiza los datos de manera clara y estructurada usando Markdown. "
+                    "Incluye tablas si es necesario y utiliza listas y encabezados para separar secciones. "
+                    "Muestra las calificaciones utilizando estrellas (★) y proporciona información nutricional cuando esté disponible. "
+                    "Si no dispones de cierta información, indícalo claramente al usuario."
+                )
+
+                context = (
+                    f"Fecha actual: {fecha_actual}\n\n"
+                    f"Comidas disponibles:\n{items_texto}\n"
+                    f"Mejores comidas por categoría:\n{mejores_items_texto}\n"
+                )
+
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "assistant", "content": context},
+                    {"role": "user", "content": user_input},
+                ]
+
+                openai.api_key = settings.OPENAI_API_KEY
+                response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=messages,
+                    max_tokens=700,
+                    temperature=0.7,
+                )
+
+                assistant_response = response.choices[0].message['content'].strip()
+                return Response({'response': assistant_response})
+
+        except openai.OpenAIError as e:
+            return Response({'error': f'Error de OpenAI: {str(e)}'}, status=500)
+        except Exception as e:
+            return Response({'error': f'Error al procesar la solicitud: {str(e)}'}, status=500)
+
+    def obtener_info_nutricional(self, nombre_item):
+        try:
+            url = 'https://api.edamam.com/api/nutrition-data'
+            # Incluir una cantidad y unidad para mejorar la precisión
+            ingr = f"1 serving {nombre_item}"
+            params = {
+                'app_id': settings.EDAMAM_APP_ID,
+                'app_key': settings.EDAMAM_APP_KEY,
+                'ingr': ingr,
+            }
+            response = requests.get(url, params=params)
+            data = response.json()
+            if response.status_code == 200 and data.get('calories') and data.get('totalNutrients'):
+                return data
+            else:
+                return None
+        except Exception as e:
+            print(f"Error al obtener información nutricional: {e}")
+            return None
+
+    def obtener_nombre_comida_para_api(self, nombre_item):
+        # Mapeo de nombres de platos a ingredientes reconocidos por la API
+        mapping = {
+            'causa': 'potato with tuna',
+            'arroz con leche': 'rice pudding',
+            'gelatina': 'gelatin dessert',
+            'flan': 'custard',
+            'pan con pollo': 'chicken sandwich',
+            'pan con queso': 'cheese sandwich',
+            'chicharron de pollo': 'fried chicken',
+        }
+        return mapping.get(nombre_item.lower(), nombre_item)

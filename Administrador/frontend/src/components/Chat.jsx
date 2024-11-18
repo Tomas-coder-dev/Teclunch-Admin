@@ -1,69 +1,93 @@
-import React, { useState, useEffect } from 'react';
-import api from '../axiosInstance';  // Usa la instancia de Axios
+import React, { useState } from 'react';
+import axios from 'axios';
+import { FaPaperPlane, FaRobot } from 'react-icons/fa';
+import { FiLoader } from 'react-icons/fi';
+import { motion } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import '../index.css';
+
+const MotionDiv = motion.create('div'); // Componente animado
 
 function Chat() {
-    const [sessions, setSessions] = useState([]);
-    const [currentSession, setCurrentSession] = useState(null);
-    const [message, setMessage] = useState('');
-    const [messages, setMessages] = useState([]);
+  const [mensaje, setMensaje] = useState('');
+  const [respuesta, setRespuesta] = useState('');
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState(null);
 
-    // Obtener las sesiones de chat del usuario
-    useEffect(() => {
-        api.get('/chatsessions/')
-            .then(response => setSessions(response.data))
-            .catch(error => console.error('Error al obtener sesiones de chat:', error));
-    }, []);
+  const handleMensajeSubmit = async (e) => {
+    e.preventDefault();
+    setCargando(true);
+    setError(null);
+    try {
+        const res = await axios.post('http://localhost:8000/chatbot/', {
+            message: mensaje,
+          });      setRespuesta(res.data.response);
+      setMensaje('');
+    } catch (error) {
+      setError(
+        error.response
+          ? error.response.data.error
+          : 'Error al procesar la solicitud.'
+      );
+    } finally {
+      setCargando(false);
+    }
+  };
 
-    // Obtener los mensajes de la sesión actual
-    useEffect(() => {
-        if (currentSession) {
-            api.get(`/mensajes/?session_id=${currentSession.id}`)
-                .then(response => setMessages(response.data))
-                .catch(error => console.error('Error al obtener mensajes:', error));
-        }
-    }, [currentSession]);
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-300 via-blue-500 to-purple-600 flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-2xl bg-white bg-opacity-80 rounded-lg shadow-lg p-6">
+        <h1 className="text-3xl sm:text-4xl font-bold text-center mb-8 text-gray-800">
+          💬 Chat Interactivo
+        </h1>
 
-    // Enviar un nuevo mensaje
-    const sendMessage = () => {
-        if (message.trim() !== '' && currentSession) {
-            api.post('/mensajes/', { session: currentSession.id, content: message })
-                .then(response => {
-                    setMessages([...messages, response.data]);
-                    setMessage('');  // Limpiar el mensaje después de enviarlo
-                })
-                .catch(error => console.error('Error al enviar mensaje:', error));
-        }
-    };
+        {/* Formulario para enviar mensajes */}
+        <form
+          onSubmit={handleMensajeSubmit}
+          className="flex flex-col sm:flex-row mb-6 space-y-2 sm:space-y-0 sm:space-x-2"
+        >
+          <input
+            type="text"
+            value={mensaje}
+            onChange={(e) => setMensaje(e.target.value)}
+            placeholder="Escribe tu mensaje..."
+            required
+            className="flex-grow p-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            type="submit"
+            disabled={cargando}
+            className="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-md transition-colors duration-300 flex items-center justify-center"
+          >
+            {cargando ? <FiLoader className="animate-spin" /> : <FaPaperPlane />}
+          </button>
+        </form>
 
-    return (
-        <div>
-            <h2>Chat Sessions</h2>
-            <ul>
-                {sessions.map(session => (
-                    <li key={session.id} onClick={() => setCurrentSession(session)}>
-                        {session.name}
-                    </li>
-                ))}
-            </ul>
+        {/* Mensajes de error */}
+        {error && (
+          <div className="bg-red-100 text-red-700 p-4 rounded-lg mb-6">
+            <h2 className="font-bold">Error:</h2>
+            <p>{error}</p>
+          </div>
+        )}
 
-            {currentSession && (
-                <div>
-                    <h3>Messages for {currentSession.name}</h3>
-                    <ul>
-                        {messages.map(msg => (
-                            <li key={msg.id}>{msg.content}</li>
-                        ))}
-                    </ul>
-                    <input
-                        type="text"
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                    />
-                    <button onClick={sendMessage}>Send</button>
-                </div>
-            )}
-        </div>
-    );
+        {/* Respuesta */}
+        {respuesta && !error && (
+          <MotionDiv
+            className="bg-white bg-opacity-90 p-6 rounded-lg shadow-inner prose max-w-none overflow-auto"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <h2 className="flex items-center font-bold text-xl mb-4 text-gray-800">
+              <FaRobot className="mr-2 text-2xl" /> Respuesta:
+            </h2>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{respuesta}</ReactMarkdown>
+          </MotionDiv>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default Chat;

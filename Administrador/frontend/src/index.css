@@ -1,20 +1,46 @@
+/* Tailwind CSS Base, Components y Utilidades */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Personalizaciones adicionales */
+/* Personalizaciones adicionales para la aplicación */
+
+/* Estilos generales del body */
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f9fafb; /* Añadido un color de fondo claro */
+  background-color: #f9fafb; /* Fondo claro */
 }
 
+/* Estilos para elementos de código */
 code {
   font-family: 'Fira Code', monospace;
-  background-color: #f3f4f6; /* Añadido un fondo gris claro */
-  padding: 2px 4px; /* Añadido padding para mejor legibilidad */
-  border-radius: 4px; /* Añadido borde redondeado */
+  background-color: #f3f4f6; /* Fondo gris claro */
+  padding: 2px 4px; /* Padding para mejor legibilidad */
+  border-radius: 4px; /* Bordes redondeados */
 }
 
+/* Estilos para tablas dentro de elementos con clase `prose` */
+.prose table {
+  width: 100%; /* Tabla ocupa todo el ancho */
+  border-collapse: collapse; /* Bordes colapsados */
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid #e2e8f0; /* Borde gris claro */
+  padding: 0.75em; /* Espaciado interno */
+  text-align: left; /* Alineación a la izquierda */
+}
+
+.prose th {
+  background-color: #edf2f7; /* Fondo gris más claro para encabezados */
+}
+
+.prose tr:nth-child(even) {
+  background-color: #f7fafc; /* Fondo alternado en filas */
+}

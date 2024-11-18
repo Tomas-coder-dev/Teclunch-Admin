@@ -1,12 +1,13 @@
 import random
 import string
 import re
-from django.db import models, transaction
-from django.db.models import F
+from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.core.validators import MinLengthValidator
+from django.db.models import Avg
+from math import log
 
 # ---------------------------
 # Validadores
@@ -90,29 +91,21 @@ class Categoria(models.Model):
         return self.nombre
 
 # ---------------------------
-# Modelo Carta
-# ---------------------------
-class Carta(models.Model):
-    nombre = models.CharField(max_length=100)
-    fecha = models.DateField(unique=True)
-    disponible = models.BooleanField(default=True)
-
-    def __str__(self):
-        return f"{self.nombre} ({self.fecha})"
-
-# ---------------------------
-# Modelo Item para Comidas y Productos
+# Modelo Item (Comida)
 # ---------------------------
 class Item(models.Model):
     nombre = models.CharField(max_length=100)
-    descripcion = models.TextField(blank=True)
-    calorias = models.IntegerField(null=True, blank=True)
+    descripcion = models.TextField(blank=True, null=True)
     precio = models.DecimalField(max_digits=6, decimal_places=2)
     categoria = models.ForeignKey(Categoria, on_delete=models.CASCADE, related_name='items')
     disponible = models.BooleanField(default=True)
-    calificacion_promedio = models.FloatField(default=0)
-    votos = models.IntegerField(default=0)
     imagen = models.ImageField(upload_to='items/', null=True, blank=True)
+
+    # Campos adicionales de Comida
+    calorias = models.IntegerField(null=True, blank=True)
+    proteinas = models.FloatField(null=True, blank=True)
+    grasas = models.FloatField(null=True, blank=True)
+    carbohidratos = models.FloatField(null=True, blank=True)
 
     def __str__(self):
         return self.nombre
@@ -135,6 +128,30 @@ class Item(models.Model):
     def remove_from_carta(self):
         fecha_hoy = timezone.now().date()
         CartaItem.objects.filter(carta__fecha=fecha_hoy, item=self).delete()
+
+    # Métodos para calificaciones y puntuaciones
+    def get_calificacion_promedio(self):
+        promedio = self.retroalimentacion_set.aggregate(Avg('calificacion'))['calificacion__avg']
+        return promedio or 0
+
+    def get_total_votos(self):
+        return self.retroalimentacion_set.count()
+
+    def get_puntaje_compuesto(self):
+        promedio = self.get_calificacion_promedio()
+        votos = self.get_total_votos()
+        return promedio * log(votos + 1) if votos > 0 else 0
+
+# ---------------------------
+# Modelo Carta
+# ---------------------------
+class Carta(models.Model):
+    nombre = models.CharField(max_length=100)
+    fecha = models.DateField(unique=True)
+    disponible = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.nombre} ({self.fecha})"
 
 # ---------------------------
 # Modelo CartaItem
@@ -166,14 +183,7 @@ class Reserva(models.Model):
     def __str__(self):
         return f"Reserva {self.codigo_reserva} - {self.estado}"
 
-    # Eliminamos la validación en el método clean
-    # def clean(self):
-    #     if self.pk is None and self.fecha_reserva != timezone.now().date():
-    #         raise ValidationError("Las reservas solo se pueden realizar para el mismo día.")
-
     def save(self, *args, **kwargs):
-        # Comentamos la llamada a self.clean()
-        # self.clean()
         estado_anterior = None
         if self.pk:
             estado_anterior = Reserva.objects.get(pk=self.pk).estado
@@ -260,16 +270,6 @@ class Pedido(models.Model):
     def __str__(self):
         return f"Pedido de {self.usuario.nombre} - {self.estado}"
 
-    # Eliminamos la validación en el método clean
-    # def clean(self):
-    #     if self.pk is None and self.fecha_pedido != timezone.now().date():
-    #         raise ValidationError("Los pedidos solo pueden realizarse para el mismo día.")
-
-    def save(self, *args, **kwargs):
-        # Comentamos la llamada a self.clean()
-        # self.clean()
-        super().save(*args, **kwargs)
-
     @property
     def codigo_reserva(self):
         return self.reserva.codigo_reserva if self.reserva else None
@@ -309,15 +309,8 @@ class Retroalimentacion(models.Model):
 
     def save(self, *args, **kwargs):
         self.clean()
-        with transaction.atomic():
-            super().save(*args, **kwargs)
-            if self.item:
-                Item.objects.filter(pk=self.item.pk).update(
-                    calificacion_promedio=(
-                        (F('calificacion_promedio') * F('votos') + self.calificacion) / (F('votos') + 1)
-                    ),
-                    votos=F('votos') + 1
-                )
+        super().save(*args, **kwargs)
+        # Ya no es necesario actualizar campos en Item
 
 # ---------------------------
 # Modelo Transaccion

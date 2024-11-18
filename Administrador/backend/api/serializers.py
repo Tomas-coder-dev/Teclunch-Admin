@@ -5,6 +5,7 @@ from .models import (
 )
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Avg
 
 # ---------------------------
 # Serializador para Categoria
@@ -115,15 +116,30 @@ class RetroalimentacionSerializer(serializers.ModelSerializer):
         return attrs
 
 # ---------------------------
-# Serializador para Item (Comida y Producto)
+# Serializador para Item
 # ---------------------------
 class ItemSerializer(serializers.ModelSerializer):
     categoria_nombre = serializers.ReadOnlyField(source='categoria.nombre')
-    retroalimentaciones = RetroalimentacionSerializer(many=True, read_only=True)
+    calificacion_promedio = serializers.SerializerMethodField()
+    total_votos = serializers.SerializerMethodField()
+    puntaje_compuesto = serializers.SerializerMethodField()
 
     class Meta:
         model = Item
-        fields = '__all__'
+        fields = [
+            'id', 'nombre', 'descripcion', 'precio', 'categoria', 'categoria_nombre',
+            'disponible', 'imagen', 'calorias', 'proteinas', 'grasas', 'carbohidratos',
+            'calificacion_promedio', 'total_votos', 'puntaje_compuesto',
+        ]
+
+    def get_calificacion_promedio(self, obj):
+        return obj.get_calificacion_promedio()
+
+    def get_total_votos(self, obj):
+        return obj.get_total_votos()
+
+    def get_puntaje_compuesto(self, obj):
+        return obj.get_puntaje_compuesto()
 
 # ---------------------------
 # Serializador para Transaccion
@@ -244,12 +260,6 @@ class ReservaCreateSerializer(serializers.ModelSerializer):
             'estado', 'reserva_items'
         ]
 
-    # Eliminamos la validación de fecha_reserva
-    # def validate_fecha_reserva(self, value):
-    #     if value != timezone.now().date():
-    #         raise serializers.ValidationError("Las reservas solo se pueden realizar para el mismo día.")
-    #     return value
-
     def create(self, validated_data):
         reserva_items_data = validated_data.pop('reserva_items_relations')
         try:
@@ -300,11 +310,11 @@ class CartaItemSerializer(serializers.ModelSerializer):
 # ---------------------------
 class CartaSerializer(serializers.ModelSerializer):
     carta_items = CartaItemSerializer(many=True, read_only=True)
-    comidas_productos = ItemSerializer(source='item_in_cartas', many=True, read_only=True)
+    items = ItemSerializer(many=True, read_only=True, source='carta_items__item')
 
     class Meta:
         model = Carta
-        fields = ['id', 'nombre', 'fecha', 'disponible', 'carta_items', 'comidas_productos']
+        fields = ['id', 'nombre', 'fecha', 'disponible', 'carta_items', 'items']
 
 # ---------------------------
 # Serializador para la Creación y Actualización de Pedido
@@ -324,12 +334,6 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
             'fecha_pedido', 'estado', 'reserva',
             'pedido_items', 'metodo_pago'
         ]
-
-    # No es necesario validar fecha_pedido ya que es read_only y se establece automáticamente
-    # def validate_fecha_pedido(self, value):
-    #     if value != timezone.now().date():
-    #         raise serializers.ValidationError("Los pedidos solo pueden realizarse para el mismo día.")
-    #     return value
 
     def create(self, validated_data):
         pedido_items_data = validated_data.pop('pedido_item_relations')

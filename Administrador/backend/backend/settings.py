@@ -1,34 +1,58 @@
-from pathlib import Path
-from datetime import timedelta
+# settings.py
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Cargar variables de entorno desde el archivo .env
+load_dotenv()
+
+# Ruta base del proyecto
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Quick-start development settings - unsuitable for production
-SECRET_KEY = 'django-insecure-m4*-1k+9yq7n5ioyr+_@t1x$*e^%y24uzpx47gj$k6i2vz2iw%'
-DEBUG = True
-ALLOWED_HOSTS = []
+# Clave secreta de Django (debe estar en el archivo .env)
+SECRET_KEY = os.getenv('SECRET_KEY', 'clave-secreta-por-defecto')
+
+# Modo de depuración (debe estar en el archivo .env)
+DEBUG = os.getenv('DEBUG', 'True') == 'True'
+
+# Hosts permitidos
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+
+# Clave de API de OpenAI (debe estar en el archivo .env)
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+
+# Claves de API de Edamam (deben estar en el archivo .env)
+EDAMAM_APP_ID = os.getenv('EDAMAM_APP_ID')
+EDAMAM_APP_KEY = os.getenv('EDAMAM_APP_KEY')
+
+# Modelo de usuario personalizado
 AUTH_USER_MODEL = 'api.Usuario'
 
-# Application definition
+# Aplicaciones instaladas
 INSTALLED_APPS = [
+    # Aplicaciones de Django
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'api',  # Nombre de la app
+
+    # Aplicaciones de terceros
     'rest_framework',
     'corsheaders',
-    # 'rest_framework_simplejwt',  # Desactivado temporalmente
     'django_filters',  # Añadido para soportar filtros en DRF
+
+    # Tu aplicación
+    'api',  # Asegúrate de reemplazar 'api' por el nombre correcto de tu aplicación
 ]
 
+# Middleware
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # Debe estar antes de CommonMiddleware
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',  # Asegura que esté antes de CommonMiddleware
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -38,9 +62,16 @@ MIDDLEWARE = [
 
 # Configuración de CORS
 CORS_ALLOW_ALL_ORIGINS = True  # Permitir todas las solicitudes de cualquier origen
+# O puedes especificar los orígenes permitidos
+# CORS_ALLOWED_ORIGINS = [
+#     'http://localhost:8000',
+#     'http://localhost:5173',  # Por ejemplo, tu frontend en desarrollo
+# ]
 
-ROOT_URLCONF = 'backend.urls'
+# URL de configuración
+ROOT_URLCONF = 'backend.urls'  # Asegúrate de que 'backend' sea el nombre correcto de tu proyecto
 
+# Configuración de plantillas
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -48,6 +79,7 @@ TEMPLATES = [
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
+                # Context processors
                 'django.template.context_processors.debug',
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
@@ -57,9 +89,10 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'backend.wsgi.application'
+# Aplicación WSGI
+WSGI_APPLICATION = 'backend.wsgi.application'  # Asegúrate de que 'backend' sea el nombre correcto de tu proyecto
 
-# Database
+# Configuración de la base de datos
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -67,7 +100,7 @@ DATABASES = {
     }
 }
 
-# Password validation
+# Validadores de contraseñas
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -75,13 +108,11 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# Django REST Framework Configuración
+# Configuración de Django REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',  # Permite acceso sin autenticación en todas las vistas
     ],
-    # 'DEFAULT_AUTHENTICATION_CLASSES': [],  # Desactiva la autenticación JWT temporalmente
-
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,  # Tamaño de página predeterminado
     'MAX_PAGE_SIZE': 100,  # Tamaño máximo permitido
@@ -92,7 +123,7 @@ REST_FRAMEWORK = {
     ],
 }
 
-# Configuración de SimpleJWT
+# Configuración de SimpleJWT (desactivada actualmente)
 # SIMPLE_JWT = {
 #     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
 #     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
@@ -101,16 +132,18 @@ REST_FRAMEWORK = {
 #     'AUTH_HEADER_TYPES': ('Bearer',),
 # }
 
-# Internationalization
-LANGUAGE_CODE = 'en-us'
+# Internacionalización
+LANGUAGE_CODE = 'es-es'
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# Static files
+# Archivos estáticos
 STATIC_URL = 'static/'
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Configuración de archivos de medios
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Tipo de campo de clave primaria por defecto
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
