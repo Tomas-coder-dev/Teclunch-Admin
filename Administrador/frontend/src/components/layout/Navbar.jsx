@@ -1,9 +1,9 @@
 // src/Navbar.jsx
 import React, { useState } from 'react';
 import styled from 'styled-components';
-import Button from './Button';
+import Button from '../common/Button';
 import { AppBar, Toolbar, Box } from '@mui/material';
-import logo from '../assets/logo.png';
+import logo from '../../assets/logo.png';
 import { motion, AnimatePresence } from 'framer-motion'; // Una sola importación para motion y AnimatePresence
 import { Link } from 'react-router-dom';
 

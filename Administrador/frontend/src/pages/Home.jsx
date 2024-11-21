@@ -1,7 +1,7 @@
-// src/components/Home.jsx
+// src/pages/Home.jsx
 
 import React, { useState, useEffect } from 'react';
-import api from '../axiosInstance';
+import api from '../api/axiosInstance';
 import Slider from 'react-slick';
 import 'slick-carousel/slick/slick.css';
 import 'slick-carousel/slick/slick-theme.css';
@@ -9,6 +9,9 @@ import { Rating, Button, Typography, CircularProgress, Alert } from '@mui/materi
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import { motion } from 'framer-motion';
+
+// No es necesario importar el Footer aquí
+// import Footer from '../components/layout/Footer';
 
 // Definición de categorías
 const categories = ["Todos", "Comidas", "Postres", "Bebidas", "Lonches"];
@@ -220,11 +223,6 @@ function Home() {
             ))}
           </div>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div className="bg-orange-500 text-white py-6 text-center">
-        <Typography variant="body1">&copy; 2024 TecFood - Todos los derechos reservados</Typography>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../axiosInstance';
+import api from '../api/axiosInstance';
 import {
     Container, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Paper, Alert, CircularProgress, Box, Stack,

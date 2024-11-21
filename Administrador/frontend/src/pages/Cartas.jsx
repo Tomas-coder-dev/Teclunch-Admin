@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../axiosInstance';
+import api from '../api/axiosInstance';
 import { 
     Container, Typography, Grid, Card, CardContent, CardActions, Button, 
     CircularProgress, Box, Alert, CardMedia, Rating, Dialog, DialogActions, 

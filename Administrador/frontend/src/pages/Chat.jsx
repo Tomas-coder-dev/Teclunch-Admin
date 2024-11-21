@@ -5,7 +5,7 @@ import { FiLoader } from 'react-icons/fi';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import '../index.css';
+import '../styles/index.css';
 
 const MotionDiv = motion.create('div'); // Componente animado
 
