@@ -276,6 +276,11 @@ class MultiplePedidoCreateViewSet(viewsets.ViewSet):
 # ---------------------------
 # Vista para el Chatbot
 # ---------------------------
+# ... (importaciones y código previo) ...
+
+# ---------------------------
+# Vista para el Chatbot
+# ---------------------------
 class ChatbotView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = [SessionAuthentication, BasicAuthentication]
@@ -337,62 +342,78 @@ class ChatbotView(APIView):
                 if categoria_nombre not in categorias_dict or calificacion_promedio > categorias_dict[categoria_nombre]['calificacion_promedio']:
                     categorias_dict[categoria_nombre] = item_data
 
-            # Formatear texto para el chatbot
-            items_texto = ""
-            for item in items_info:
-                estrellas_num = int(round(item['calificacion_promedio']))
-                estrellas = '★' * estrellas_num + '☆' * (5 - estrellas_num)
-                items_texto += f"### {item['nombre']} ({item['categoria']})\n"
-                items_texto += f"- **Calificación Promedio:** {estrellas} ({item['calificacion_promedio']:.1f} de 5)\n"
-                items_texto += f"- **Total de Votos:** {item['total_votos']}\n"
-                items_texto += f"- **Calorías:** {item['calorias']}\n"
-                items_texto += f"- **Nutrientes:**\n"
-                items_texto += f"  - Proteínas: {item['nutrientes']['proteinas']}\n"
-                items_texto += f"  - Grasas: {item['nutrientes']['grasas']}\n"
-                items_texto += f"  - Carbohidratos: {item['nutrientes']['carbohidratos']}\n"
-                items_texto += f"- **Descripción:** {item['descripcion']}\n\n"
-
-            # Información de los mejores items por categoría
-            mejores_items_texto = ""
-            for categoria, datos in categorias_dict.items():
-                estrellas_num = int(round(datos['calificacion_promedio']))
-                estrellas = '★' * estrellas_num + '☆' * (5 - estrellas_num)
-                mejores_items_texto += f"- **{categoria}:** {datos['nombre']} con calificación promedio de {estrellas} ({datos['calificacion_promedio']:.1f} de 5)\n"
-
             fecha_actual = datetime.datetime.now().strftime("%d/%m/%Y")
 
             # Analizar si el usuario solicita una tabla calórica
             solicita_tabla_calorica = any(keyword in user_input.lower() for keyword in ['tabla calórica', 'tabla calorica', 'tabla de calorías', 'tabla de calorias'])
 
             if solicita_tabla_calorica:
+                # Verificar si el usuario menciona un ítem específico
+                palabras_usuario = user_input.lower().split()
+                nombres_items = [item['nombre'].lower() for item in items_info]
+
+                # Buscar coincidencias entre las palabras del usuario y los nombres de los ítems
+                items_solicitados = []
+                for nombre_item in nombres_items:
+                    if nombre_item in user_input.lower():
+                        items_solicitados.append(nombre_item)
+
+                # Si se encontraron ítems solicitados, filtrar items_info
+                if items_solicitados:
+                    items_filtrados = [item for item in items_info if item['nombre'].lower() in items_solicitados]
+                else:
+                    items_filtrados = items_info  # Mostrar todos si no se especifica un ítem
+
                 # Crear una tabla calórica detallada
                 tabla_calorica = (
-                    "| **Comida**           | **Calorías**   | **Proteínas**   | **Grasas**      | **Carbohidratos** |\n"
-                    "|----------------------|---------------:|----------------:|----------------:|------------------:|\n"
+                    "| **Comida** | **Calorías** | **Proteínas** | **Grasas** | **Carbohidratos** |\n"
+                    "|------------|-------------:|--------------:|-----------:|------------------:|\n"
                 )
-                for item in items_info:
+                for item in items_filtrados:
                     tabla_calorica += (
-                        f"| {item['nombre']:<20} | {item['calorias']:<13} | "
-                        f"{item['nutrientes']['proteinas']:<14} | {item['nutrientes']['grasas']:<14} | "
-                        f"{item['nutrientes']['carbohidratos']:<17} |\n"
+                        f"| {item['nombre']} | {item['calorias']} | "
+                        f"{item['nutrientes']['proteinas']} | {item['nutrientes']['grasas']} | "
+                        f"{item['nutrientes']['carbohidratos']} |\n"
                     )
 
                 assistant_response = f"### Tabla Calórica de Comidas Disponibles\n\n{tabla_calorica}"
                 return Response({'response': assistant_response})
 
             else:
+                # Formatear texto para el chatbot
+                items_texto = ""
+                for idx, item in enumerate(items_info, start=1):
+                    estrellas_num = int(round(item['calificacion_promedio']))
+                    estrellas = '★' * estrellas_num + '☆' * (5 - estrellas_num)
+                    items_texto += f"### {idx}. {item['nombre']} ({item['categoria']})\n\n"
+                    items_texto += f"- **Calificación Promedio:** {estrellas} ({item['calificacion_promedio']:.1f} de 5)\n"
+                    items_texto += f"- **Total de Votos:** {item['total_votos']}\n"
+                    items_texto += f"- **Calorías:** {item['calorias']}\n"
+                    items_texto += f"- **Nutrientes:**\n"
+                    items_texto += f"    - Proteínas: {item['nutrientes']['proteinas']}\n"
+                    items_texto += f"    - Grasas: {item['nutrientes']['grasas']}\n"
+                    items_texto += f"    - Carbohidratos: {item['nutrientes']['carbohidratos']}\n"
+                    items_texto += f"- **Descripción:** {item['descripcion']}\n\n"
+
+                # Información de los mejores items por categoría
+                mejores_items_texto = ""
+                for categoria, datos in categorias_dict.items():
+                    estrellas_num = int(round(datos['calificacion_promedio']))
+                    estrellas = '★' * estrellas_num + '☆' * (5 - estrellas_num)
+                    mejores_items_texto += f"- **{categoria}:** {datos['nombre']} con calificación promedio de {estrellas} ({datos['calificacion_promedio']:.1f} de 5)\n"
+
                 # Crear el mensaje para la IA
                 system_prompt = (
                     "Eres un asistente culinario experto que ayuda a los usuarios brindando información detallada sobre las comidas disponibles. "
-                    "Cuando proporciones información, organiza los datos de manera clara y estructurada usando Markdown. "
-                    "Incluye tablas si es necesario y utiliza listas y encabezados para separar secciones. "
+                    "Organiza los datos de manera clara y estructurada usando Markdown. "
+                    "Incluye listas numeradas, encabezados, tablas si es necesario, y utiliza listas con viñetas para detalles adicionales. "
                     "Muestra las calificaciones utilizando estrellas (★) y proporciona información nutricional cuando esté disponible. "
                     "Si no dispones de cierta información, indícalo claramente al usuario."
                 )
 
                 context = (
                     f"Fecha actual: {fecha_actual}\n\n"
-                    f"Comidas disponibles:\n{items_texto}\n"
+                    f"Comidas disponibles:\n\n{items_texto}\n"
                     f"Mejores comidas por categoría:\n{mejores_items_texto}\n"
                 )
 
@@ -445,8 +466,10 @@ class ChatbotView(APIView):
             'arroz con leche': 'rice pudding',
             'gelatina': 'gelatin dessert',
             'flan': 'custard',
-            'pan con pollo': 'chicken sandwich',
+            'pan con pato': 'chicken sandwich',
             'pan con queso': 'cheese sandwich',
             'chicharron de pollo': 'fried chicken',
+            'galletas': 'cookies',
+
         }
         return mapping.get(nombre_item.lower(), nombre_item)

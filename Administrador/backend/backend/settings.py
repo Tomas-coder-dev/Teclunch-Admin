@@ -16,6 +16,8 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'clave-secreta-por-defecto')
 # Modo de depuración (debe estar en el archivo .env)
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
+DEBUG = True
+
 # Hosts permitidos
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
