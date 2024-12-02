@@ -31,23 +31,27 @@ import PersonIcon from '@mui/icons-material/Person';
 import PaymentIcon from '@mui/icons-material/Payment';
 import EventIcon from '@mui/icons-material/Event';
 import DescriptionIcon from '@mui/icons-material/Description';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { styled } from '@mui/material/styles';
 import { motion } from 'framer-motion';
+import fondoComedor from '../assets/comedor.jpg'; // Importamos la imagen de fondo
 
-// Estilos personalizados para las tarjetas
+// Estilos personalizados
+const StyledContainer = styled('div')({
+  backgroundImage: `url(${fondoComedor})`,
+  backgroundSize: 'cover',
+  backgroundPosition: 'center',
+  backgroundAttachment: 'fixed',
+  minHeight: '100vh',
+});
+
 const StyledCard = styled(Card)(({ theme }) => ({
-  position: 'relative',
+  backgroundColor: 'rgba(255, 255, 255, 0.8)',
+  backdropFilter: 'blur(5px)',
+  borderRadius: theme.spacing(2),
+  boxShadow: theme.shadows[5],
   overflow: 'hidden',
-  '&::before': {
-    content: '""',
-    position: 'absolute',
-    width: '150%',
-    height: '150%',
-    background: 'linear-gradient(45deg, rgba(30,60,114,0.1), rgba(42,82,152,0.1))',
-    transform: 'rotate(-25deg)',
-    top: '-20%',
-    left: '-20%',
-  },
+  position: 'relative',
 }));
 
 function Pedidos() {
@@ -55,7 +59,7 @@ function Pedidos() {
   const [pedidos, setPedidos] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true); // Aseguramos que 'loading' está definido
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [mensaje, setMensaje] = useState(null);
   const [open, setOpen] = useState(false);
@@ -91,6 +95,8 @@ function Pedidos() {
       setLoading(false);
     }
   };
+
+  // Funciones para manejar cambios y acciones
 
   // Función para manejar cambios de estado en un pedido
   const handleEstadoChange = async (pedidoId, nuevoEstado) => {
@@ -137,6 +143,20 @@ function Pedidos() {
       }
     } catch (error) {
       setError('Error al actualizar el método de pago del pedido.');
+    }
+  };
+
+  // Función para eliminar un pedido
+  const handleEliminarPedido = async (pedidoId) => {
+    if (window.confirm('¿Estás seguro de que deseas eliminar este pedido?')) {
+      try {
+        await api.delete(`/pedidos/${pedidoId}/`);
+        setPedidos(pedidos.filter((pedido) => pedido.id !== pedidoId));
+        setMensaje('Pedido eliminado correctamente');
+        setTimeout(() => setMensaje(null), 3000);
+      } catch (error) {
+        setError('Error al eliminar el pedido.');
+      }
     }
   };
 
@@ -208,7 +228,6 @@ function Pedidos() {
         } else if (errorData.detail) {
           setError(errorData.detail);
         } else {
-          // Concatenar mensajes de error de campos específicos
           const errorMessages = Object.values(errorData)
             .flat()
             .join(' ');
@@ -230,15 +249,15 @@ function Pedidos() {
   }
 
   return (
-    <div
-      style={{
-        background: 'linear-gradient(to right, #1e3c72, #2a5298)',
-        minHeight: '100vh',
-        padding: '2rem 0',
-      }}
-    >
-      <Container>
-        <Typography variant="h4" component="h1" align="center" gutterBottom color="white">
+    <StyledContainer>
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Typography
+          variant="h4"
+          component="h1"
+          align="center"
+          gutterBottom
+          sx={{ color: '#fff', textShadow: '2px 2px 4px rgba(0,0,0,0.7)', mb: 4 }}
+        >
           <ShoppingCartIcon fontSize="large" /> Pedidos
         </Typography>
 
@@ -256,17 +275,34 @@ function Pedidos() {
         <Box sx={{ display: 'flex', justifyContent: 'center', mb: 4 }}>
           <Button
             variant="contained"
-            color="secondary"
+            color="primary"
             onClick={handleOpen}
             startIcon={<AddCircleIcon />}
-            sx={{ fontWeight: 'bold' }}
+            sx={{
+              fontWeight: 'bold',
+              backgroundColor: 'rgba(255, 255, 255, 0.8)',
+              color: '#2a5298',
+            }}
           >
             Crear Nuevo Pedido
           </Button>
         </Box>
 
         {/* Diálogo para crear nuevo pedido */}
-        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth TransitionComponent={Slide}>
+        <Dialog
+          open={open}
+          onClose={handleClose}
+          maxWidth="sm"
+          fullWidth
+          TransitionComponent={Slide}
+          keepMounted
+          PaperProps={{
+            style: {
+              backgroundColor: 'rgba(255, 255, 255, 0.9)',
+              backdropFilter: 'blur(5px)',
+            },
+          }}
+        >
           <DialogTitle sx={{ display: 'flex', alignItems: 'center' }}>
             <AddCircleIcon sx={{ mr: 1 }} />
             <Typography variant="h6" component="div">
@@ -453,8 +489,8 @@ function Pedidos() {
                       ))}
                     </ul>
                   </CardContent>
-                  <CardActions sx={{ justifyContent: 'center' }}>
-                    <FormControl sx={{ minWidth: 120 }}>
+                  <CardActions sx={{ justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <FormControl sx={{ minWidth: 120, mb: 1 }}>
                       <InputLabel id={`estado-pedido-label-${pedido.id}`}>Estado</InputLabel>
                       <Select
                         labelId={`estado-pedido-label-${pedido.id}`}
@@ -468,7 +504,7 @@ function Pedidos() {
                         <MenuItem value="Cancelado">Cancelado</MenuItem>
                       </Select>
                     </FormControl>
-                    <FormControl sx={{ minWidth: 120, ml: 2 }}>
+                    <FormControl sx={{ minWidth: 120, ml: 2, mb: 1 }}>
                       <InputLabel id={`metodo-pago-label-${pedido.id}`}>Método de Pago</InputLabel>
                       <Select
                         labelId={`metodo-pago-label-${pedido.id}`}
@@ -485,6 +521,15 @@ function Pedidos() {
                         <MenuItem value="Otro">Otro</MenuItem>
                       </Select>
                     </FormControl>
+                    <Tooltip title="Eliminar Pedido">
+                      <IconButton
+                        color="error"
+                        onClick={() => handleEliminarPedido(pedido.id)}
+                        sx={{ ml: 2 }}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
                   </CardActions>
                 </StyledCard>
               </motion.div>
@@ -492,7 +537,7 @@ function Pedidos() {
           ))}
         </Grid>
       </Container>
-    </div>
+    </StyledContainer>
   );
 }
 

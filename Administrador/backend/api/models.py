@@ -100,6 +100,7 @@ class Item(models.Model):
     categoria = models.ForeignKey(Categoria, on_delete=models.CASCADE, related_name='items')
     disponible = models.BooleanField(default=True)
     imagen = models.ImageField(upload_to='items/', null=True, blank=True)
+    ingredientes = models.TextField(null=True, blank=True)
 
     # Campos adicionales de Comida
     calorias = models.IntegerField(null=True, blank=True)

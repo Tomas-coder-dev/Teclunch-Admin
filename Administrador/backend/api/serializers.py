@@ -118,16 +118,26 @@ class RetroalimentacionSerializer(serializers.ModelSerializer):
 # ---------------------------
 # Serializador para Item
 # ---------------------------
+from rest_framework import serializers
+
 class ItemSerializer(serializers.ModelSerializer):
     categoria_nombre = serializers.ReadOnlyField(source='categoria.nombre')
     calificacion_promedio = serializers.SerializerMethodField()
     total_votos = serializers.SerializerMethodField()
     puntaje_compuesto = serializers.SerializerMethodField()
-
+    
+    # Definir explícitamente los campos opcionales
+    ingredientes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    calorias = serializers.IntegerField(required=False, allow_null=True)
+    proteinas = serializers.FloatField(required=False, allow_null=True)
+    grasas = serializers.FloatField(required=False, allow_null=True)
+    carbohidratos = serializers.FloatField(required=False, allow_null=True)
+    descripcion = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
     class Meta:
         model = Item
         fields = [
-            'id', 'nombre', 'descripcion', 'precio', 'categoria', 'categoria_nombre',
+            'id', 'nombre', 'descripcion', 'ingredientes', 'precio', 'categoria', 'categoria_nombre',
             'disponible', 'imagen', 'calorias', 'proteinas', 'grasas', 'carbohidratos',
             'calificacion_promedio', 'total_votos', 'puntaje_compuesto',
         ]
@@ -140,6 +150,7 @@ class ItemSerializer(serializers.ModelSerializer):
 
     def get_puntaje_compuesto(self, obj):
         return obj.get_puntaje_compuesto()
+
 
 # ---------------------------
 # Serializador para Transaccion
