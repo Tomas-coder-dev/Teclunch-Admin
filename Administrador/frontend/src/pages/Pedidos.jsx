@@ -373,9 +373,9 @@ function Pedidos() {
                   </span>
                 }
               >
-                <MenuItem value="Stripe">Stripe</MenuItem>
-                <MenuItem value="PayPal">PayPal</MenuItem>
-                <MenuItem value="Otro">Otro</MenuItem>
+                <MenuItem value="Banca Movil">Banca Movil</MenuItem>
+                <MenuItem value="Tarjeta">Tarjeta</MenuItem>
+                <MenuItem value="Efectivo">Efectivo</MenuItem>
               </Select>
             </FormControl>
 
@@ -516,9 +516,9 @@ function Pedidos() {
                         onChange={(e) => handleMetodoPagoChange(pedido.id, e.target.value)}
                         label="Método de Pago"
                       >
-                        <MenuItem value="Stripe">Stripe</MenuItem>
-                        <MenuItem value="PayPal">PayPal</MenuItem>
-                        <MenuItem value="Otro">Otro</MenuItem>
+                        <MenuItem value="Banca Movil">Banca Movil</MenuItem>
+                        <MenuItem value="Tarjeta">Tarjeta</MenuItem>
+                        <MenuItem value="Efectivo">Efectivo</MenuItem>
                       </Select>
                     </FormControl>
                     <Tooltip title="Eliminar Pedido">

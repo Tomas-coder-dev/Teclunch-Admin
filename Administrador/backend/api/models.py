@@ -318,9 +318,9 @@ class Retroalimentacion(models.Model):
 # ---------------------------
 class Transaccion(models.Model):
     METODO_PAGO_CHOICES = [
-        ('Stripe', 'Stripe'),
-        ('PayPal', 'PayPal'),
-        ('Otro', 'Otro'),
+        ('Banca Movil', 'Banca Movil'),
+        ('Tarjeta', 'Tarjeta'),
+        ('Efectivo', 'Efectivo'),
     ]
     ESTADO_CHOICES = [
         ('Pendiente', 'Pendiente'),
