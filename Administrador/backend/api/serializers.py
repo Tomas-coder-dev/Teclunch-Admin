@@ -1,9 +1,10 @@
+# api/serializers.py
+
 from rest_framework import serializers
 from .models import (
-    Usuario, Item, Carta, CartaItem, Pedido, Reserva,
-    Retroalimentacion, Transaccion, Categoria, PedidoItem, ReservaItem, Carrito, CarritoItem
+    AdminUsuario, Categoria, Item, Carta, CartaItem, Pedido,
+    Retroalimentacion, Transaccion, PedidoItem
 )
-from django.utils import timezone
 from django.db import transaction
 from django.db.models import Avg
 
@@ -16,15 +17,13 @@ class CategoriaSerializer(serializers.ModelSerializer):
         fields = ['id', 'nombre']
 
 # ---------------------------
-# Serializador para Usuario (Lectura)
+# Serializador para AdminUsuario (Lectura)
 # ---------------------------
-class UsuarioSerializer(serializers.ModelSerializer):
+class AdminUsuarioSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Usuario
+        model = AdminUsuario
         fields = [
-            'id_institucional', 'nombre', 'correo', 'rol',
-            'preferencias_alimenticias', 'restricciones_dieteticas',
-            'habitos_consumo'
+            'id_institucional', 'nombre', 'correo', 'role'
         ]
 
     def validate_correo(self, value):
@@ -33,61 +32,33 @@ class UsuarioSerializer(serializers.ModelSerializer):
         return value
 
 # ---------------------------
-# Serializador para Usuario (Creación)
+# Serializador para AdminUsuario (Creación)
 # ---------------------------
-class UsuarioCreateSerializer(serializers.ModelSerializer):
-    contraseña = serializers.CharField(write_only=True)
+class AdminUsuarioCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
 
     class Meta:
-        model = Usuario
+        model = AdminUsuario
         fields = [
-            'id_institucional', 'nombre', 'correo', 'rol',
-            'preferencias_alimenticias', 'restricciones_dieteticas',
-            'habitos_consumo', 'contraseña'
+            'id_institucional', 'nombre', 'correo', 'password', 'role'
         ]
 
     def validate_correo(self, value):
         if not value.endswith('@tecsup.edu.pe'):
             raise serializers.ValidationError("El correo debe ser del dominio @tecsup.edu.pe")
+        return value
+
+    def validate_role(self, value):
+        if value != 'administrador':
+            raise serializers.ValidationError("El rol debe ser 'administrador'.")
         return value
 
     def create(self, validated_data):
-        contraseña = validated_data.pop('contraseña')
-        usuario = Usuario.objects.create(**validated_data)
-        usuario.set_password(contraseña)
+        password = validated_data.pop('password')
+        usuario = AdminUsuario.objects.create(**validated_data)
+        usuario.set_password(password)
         usuario.save()
         return usuario
-
-# ---------------------------
-# Serializador para CarritoItem
-# ---------------------------
-class CarritoItemSerializer(serializers.ModelSerializer):
-    item_nombre = serializers.ReadOnlyField(source='item.nombre')
-    item_categoria = serializers.ReadOnlyField(source='item.categoria.nombre')
-
-    class Meta:
-        model = CarritoItem
-        fields = ['id', 'item', 'item_nombre', 'item_categoria', 'cantidad']
-
-    def validate_item(self, value):
-        if not value.disponible:
-            raise serializers.ValidationError("El ítem seleccionado no está disponible.")
-        return value
-
-    def validate_cantidad(self, value):
-        if value < 1:
-            raise serializers.ValidationError("La cantidad debe ser al menos 1.")
-        return value
-
-# ---------------------------
-# Serializador para Carrito
-# ---------------------------
-class CarritoSerializer(serializers.ModelSerializer):
-    items = CarritoItemSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = Carrito
-        fields = ['id', 'usuario', 'items']
 
 # ---------------------------
 # Serializador para Retroalimentacion
@@ -118,27 +89,26 @@ class RetroalimentacionSerializer(serializers.ModelSerializer):
 # ---------------------------
 # Serializador para Item
 # ---------------------------
-from rest_framework import serializers
-
 class ItemSerializer(serializers.ModelSerializer):
     categoria_nombre = serializers.ReadOnlyField(source='categoria.nombre')
     calificacion_promedio = serializers.SerializerMethodField()
     total_votos = serializers.SerializerMethodField()
     puntaje_compuesto = serializers.SerializerMethodField()
-    
-    # Definir explícitamente los campos opcionales
+    imagen_url = serializers.SerializerMethodField()
+
+    # Campos opcionales
     ingredientes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     calorias = serializers.IntegerField(required=False, allow_null=True)
     proteinas = serializers.FloatField(required=False, allow_null=True)
     grasas = serializers.FloatField(required=False, allow_null=True)
     carbohidratos = serializers.FloatField(required=False, allow_null=True)
     descripcion = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    
+
     class Meta:
         model = Item
         fields = [
             'id', 'nombre', 'descripcion', 'ingredientes', 'precio', 'categoria', 'categoria_nombre',
-            'disponible', 'imagen', 'calorias', 'proteinas', 'grasas', 'carbohidratos',
+            'disponible', 'imagen', 'imagen_url', 'calorias', 'proteinas', 'grasas', 'carbohidratos',
             'calificacion_promedio', 'total_votos', 'puntaje_compuesto',
         ]
 
@@ -151,19 +121,42 @@ class ItemSerializer(serializers.ModelSerializer):
     def get_puntaje_compuesto(self, obj):
         return obj.get_puntaje_compuesto()
 
+    def get_imagen_url(self, obj):
+        request = self.context.get('request')
+        if obj.imagen and hasattr(obj.imagen, 'url'):
+            return request.build_absolute_uri(obj.imagen.url)
+        return None
 
 # ---------------------------
-# Serializador para Transaccion
+# Serializador para Transaccion (Lectura y Actualización)
 # ---------------------------
 class TransaccionSerializer(serializers.ModelSerializer):
-    pedido_usuario = serializers.ReadOnlyField(source='pedido.usuario.nombre')
+    pedido_codigo_pedido = serializers.ReadOnlyField(source='pedido.codigo_pedido')
+    usuario_nombre = serializers.ReadOnlyField(source='pedido.usuario.nombre')
+    realizador_nombre = serializers.ReadOnlyField(source='realizador.nombre')
+    realizador_id_institucional = serializers.ReadOnlyField(source='realizador.id_institucional')
 
     class Meta:
         model = Transaccion
         fields = [
-            'id', 'pedido', 'pedido_usuario', 'metodo_pago', 'estado',
+            'id', 'pedido', 'pedido_codigo_pedido', 'usuario_nombre',
+            'metodo_pago', 'estado', 'fecha', 'monto',
+            'realizador_nombre', 'realizador_id_institucional',
+            'user_id_institucional', 'user_nombre'
+        ]
+        read_only_fields = [
+            'pedido_codigo_pedido', 'usuario_nombre',
+            'realizador_nombre', 'realizador_id_institucional',
             'fecha', 'monto'
         ]
+
+    def update(self, instance, validated_data):
+        new_estado = validated_data.get('estado', instance.estado)
+        if instance.estado in ['Completado', 'Fallido']:
+            raise serializers.ValidationError("El estado de esta transacción ya no puede ser modificado.")
+        instance.estado = new_estado
+        instance.save()
+        return instance
 
 # ---------------------------
 # Serializador para PedidoItem
@@ -171,11 +164,18 @@ class TransaccionSerializer(serializers.ModelSerializer):
 class PedidoItemSerializer(serializers.ModelSerializer):
     item_nombre = serializers.ReadOnlyField(source='item.nombre')
     item_categoria = serializers.ReadOnlyField(source='item.categoria.nombre')
+    item_imagen = serializers.SerializerMethodField()
     item = serializers.PrimaryKeyRelatedField(queryset=Item.objects.all())
 
     class Meta:
         model = PedidoItem
-        fields = ['id', 'item', 'item_nombre', 'item_categoria', 'cantidad']
+        fields = ['id', 'item', 'item_nombre', 'item_categoria', 'item_imagen', 'cantidad']
+
+    def get_item_imagen(self, obj):
+        request = self.context.get('request')
+        if obj.item.imagen and hasattr(obj.item.imagen, 'url'):
+            return request.build_absolute_uri(obj.item.imagen.url)
+        return None
 
     def validate_item(self, value):
         if not value.disponible:
@@ -192,7 +192,7 @@ class PedidoItemSerializer(serializers.ModelSerializer):
 # ---------------------------
 class PedidoSerializer(serializers.ModelSerializer):
     usuario_nombre = serializers.ReadOnlyField(source='usuario.nombre')
-    codigo_reserva = serializers.ReadOnlyField()
+    codigo_pedido = serializers.ReadOnlyField()  # Campo añadido
     pedido_items = PedidoItemSerializer(many=True, read_only=True, source='pedido_item_relations')
     total_pedido = serializers.SerializerMethodField()
     transacciones = TransaccionSerializer(many=True, read_only=True)
@@ -201,102 +201,12 @@ class PedidoSerializer(serializers.ModelSerializer):
         model = Pedido
         fields = [
             'id', 'usuario', 'usuario_nombre', 'carta',
-            'fecha_pedido', 'estado', 'reserva', 'codigo_reserva',
-            'pedido_items', 'total_pedido', 'transacciones'
+            'fecha_pedido', 'estado',
+            'pedido_items', 'total_pedido', 'transacciones', 'codigo_pedido'
         ]
 
     def get_total_pedido(self, obj):
         return obj.calcular_total() or 0.0
-
-# ---------------------------
-# Serializador para ReservaItem
-# ---------------------------
-class ReservaItemSerializer(serializers.ModelSerializer):
-    item = serializers.PrimaryKeyRelatedField(queryset=Item.objects.all())
-    item_nombre = serializers.ReadOnlyField(source='item.nombre')
-    item_categoria = serializers.ReadOnlyField(source='item.categoria.nombre')
-
-    class Meta:
-        model = ReservaItem
-        fields = ['id', 'item', 'item_nombre', 'item_categoria', 'cantidad']
-
-    def validate_item(self, value):
-        if not value.disponible:
-            raise serializers.ValidationError("El ítem seleccionado no está disponible.")
-        return value
-
-    def validate_cantidad(self, value):
-        if value < 1:
-            raise serializers.ValidationError("La cantidad debe ser al menos 1.")
-        return value
-
-# ---------------------------
-# Serializador para Reserva (Representación)
-# ---------------------------
-class ReservaSerializer(serializers.ModelSerializer):
-    usuario_nombre = serializers.ReadOnlyField(source='usuario.nombre')
-    codigo_reserva = serializers.ReadOnlyField()
-    reserva_items = ReservaItemSerializer(many=True, read_only=True, source='reserva_items_relations')
-    total_reserva = serializers.SerializerMethodField()
-    pedido = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Reserva
-        fields = [
-            'id', 'usuario', 'usuario_nombre', 'fecha_reserva',
-            'fecha_hora_creacion', 'estado', 'codigo_reserva',
-            'reserva_items', 'total_reserva', 'pedido'
-        ]
-
-    def get_total_reserva(self, obj):
-        return obj.calcular_total() or 0.0
-
-    def get_pedido(self, obj):
-        pedido = obj.pedidos.first()  # Accede al primer pedido asociado
-        if pedido:
-            return PedidoSerializer(pedido).data
-        return None
-
-# ---------------------------
-# Serializador para la Creación y Actualización de Reserva
-# ---------------------------
-class ReservaCreateSerializer(serializers.ModelSerializer):
-    reserva_items = ReservaItemSerializer(many=True, source='reserva_items_relations')
-    usuario = serializers.SlugRelatedField(queryset=Usuario.objects.all(), slug_field='id_institucional')
-
-    class Meta:
-        model = Reserva
-        fields = [
-            'id', 'usuario', 'fecha_reserva',
-            'estado', 'reserva_items'
-        ]
-
-    def create(self, validated_data):
-        reserva_items_data = validated_data.pop('reserva_items_relations')
-        try:
-            with transaction.atomic():
-                reserva = Reserva.objects.create(**validated_data)
-                for ri_data in reserva_items_data:
-                    ReservaItem.objects.create(reserva=reserva, **ri_data)
-        except Exception as e:
-            raise serializers.ValidationError(f"Error al crear la reserva: {str(e)}")
-        return reserva
-
-    def update(self, instance, validated_data):
-        reserva_items_data = validated_data.pop('reserva_items_relations', None)
-        try:
-            with transaction.atomic():
-                for attr, value in validated_data.items():
-                    setattr(instance, attr, value)
-                instance.save()
-
-                if reserva_items_data is not None:
-                    instance.reserva_items_relations.all().delete()
-                    for ri_data in reserva_items_data:
-                        ReservaItem.objects.create(reserva=instance, **ri_data)
-        except Exception as e:
-            raise serializers.ValidationError(f"Error al actualizar la reserva: {str(e)}")
-        return instance
 
 # ---------------------------
 # Serializador para CartaItem
@@ -335,20 +245,25 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
     metodo_pago = serializers.ChoiceField(choices=Transaccion.METODO_PAGO_CHOICES, write_only=True)
     fecha_pedido = serializers.DateField(read_only=True)
     carta = serializers.PrimaryKeyRelatedField(queryset=Carta.objects.all(), required=False, allow_null=True)
-    reserva = serializers.PrimaryKeyRelatedField(queryset=Reserva.objects.all(), required=False, allow_null=True)
-    usuario = serializers.SlugRelatedField(queryset=Usuario.objects.all(), slug_field='id_institucional')
+    usuario = serializers.SlugRelatedField(queryset=AdminUsuario.objects.all(), slug_field='id_institucional')
+    codigo_pedido = serializers.ReadOnlyField()  # Campo añadido
+    realizador_id_institucional = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    realizador_nombre = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = Pedido
         fields = [
             'id', 'usuario', 'carta',
-            'fecha_pedido', 'estado', 'reserva',
-            'pedido_items', 'metodo_pago'
+            'fecha_pedido', 'estado',
+            'pedido_items', 'metodo_pago', 'codigo_pedido',
+            'realizador_id_institucional', 'realizador_nombre'
         ]
 
     def create(self, validated_data):
         pedido_items_data = validated_data.pop('pedido_item_relations')
         metodo_pago = validated_data.pop('metodo_pago')
+        realizador_id_institucional = validated_data.pop('realizador_id_institucional', None)
+        realizador_nombre = validated_data.pop('realizador_nombre', None)
         try:
             with transaction.atomic():
                 pedido = Pedido.objects.create(**validated_data)
@@ -358,12 +273,23 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
                     item = pi_data.get('item')
                     pedido_item = PedidoItem.objects.create(pedido=pedido, item=item, cantidad=cantidad)
                     total_monto += (pedido_item.item.precio or 0) * cantidad
-                Transaccion.objects.create(
+                transaccion = Transaccion.objects.create(
                     pedido=pedido,
                     metodo_pago=metodo_pago,
                     estado='Pendiente',
                     monto=total_monto
                 )
+                if realizador_id_institucional and realizador_nombre:
+                    # Intentar asociar el realizador como un AdminUsuario existente
+                    realizador = AdminUsuario.objects.filter(id_institucional=realizador_id_institucional, nombre=realizador_nombre).first()
+                    if realizador:
+                        transaccion.realizador = realizador
+                        transaccion.save()
+                    else:
+                        # Guardar información del usuario externo
+                        transaccion.user_id_institucional = realizador_id_institucional
+                        transaccion.user_nombre = realizador_nombre
+                        transaccion.save()
         except Exception as e:
             raise serializers.ValidationError(f"Error al crear el pedido: {str(e)}")
         return pedido
@@ -371,6 +297,8 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         pedido_items_data = validated_data.pop('pedido_item_relations', None)
         metodo_pago = validated_data.pop('metodo_pago', None)
+        realizador_id_institucional = validated_data.pop('realizador_id_institucional', None)
+        realizador_nombre = validated_data.pop('realizador_nombre', None)
         try:
             with transaction.atomic():
                 for attr, value in validated_data.items():
@@ -390,6 +318,13 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
                         transaccion.monto = total_monto
                         if metodo_pago:
                             transaccion.metodo_pago = metodo_pago
+                        if realizador_id_institucional and realizador_nombre:
+                            realizador = AdminUsuario.objects.filter(id_institucional=realizador_id_institucional, nombre=realizador_nombre).first()
+                            if realizador:
+                                transaccion.realizador = realizador
+                            else:
+                                transaccion.user_id_institucional = realizador_id_institucional
+                                transaccion.user_nombre = realizador_nombre
                         transaccion.save()
                     else:
                         Transaccion.objects.create(
@@ -403,33 +338,21 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
         return instance
 
 # ---------------------------
-# Serializador para Múltiples Reservas (Opcional)
-# ---------------------------
-class MultipleReservaCreateSerializer(serializers.Serializer):
-    reservas = ReservaCreateSerializer(many=True)
-
-    def create(self, validated_data):
-        reservas_data = validated_data.pop('reservas')
-        reservas = []
-        for reserva_data in reservas_data:
-            reserva_serializer = ReservaCreateSerializer(data=reserva_data)
-            reserva_serializer.is_valid(raise_exception=True)
-            reserva = reserva_serializer.save()
-            reservas.append(reserva)
-        return reservas
-
-# ---------------------------
-# Serializador para Múltiples Pedidos (Opcional)
+# Serializador para la Creación Masiva de Pedidos
 # ---------------------------
 class MultiplePedidoCreateSerializer(serializers.Serializer):
     pedidos = PedidoCreateSerializer(many=True)
 
     def create(self, validated_data):
         pedidos_data = validated_data.pop('pedidos')
-        pedidos = []
-        for pedido_data in pedidos_data:
-            pedido_serializer = PedidoCreateSerializer(data=pedido_data)
-            pedido_serializer.is_valid(raise_exception=True)
-            pedido = pedido_serializer.save()
-            pedidos.append(pedido)
-        return pedidos
+        created_pedidos = []
+        try:
+            with transaction.atomic():
+                for pedido_data in pedidos_data:
+                    serializer = PedidoCreateSerializer(data=pedido_data)
+                    serializer.is_valid(raise_exception=True)
+                    pedido = serializer.save()
+                    created_pedidos.append(pedido)
+        except Exception as e:
+            raise serializers.ValidationError(f"Error al crear los pedidos: {str(e)}")
+        return created_pedidos

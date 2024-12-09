@@ -1,49 +1,54 @@
-import random
-import string
+# api/models.py
+
 import re
+import random
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.core.validators import MinLengthValidator
-from django.db.models import Avg
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from math import log
+from django.db.models import Avg  # Añadido para Aggregate functions
 
 # ---------------------------
 # Validadores
 # ---------------------------
-def validate_email(value):
+def validate_admin_email(value):
     email_regex = r'^[a-zA-Z0-9_.+-]+@tecsup\.edu\.pe$'
     if not re.match(email_regex, value):
         raise ValidationError('El correo debe ser del dominio @tecsup.edu.pe.')
 
+# Alias para compatibilidad con migraciones existentes
+validate_email = validate_admin_email
+
 # ---------------------------
-# Manager Personalizado para Usuario
+# Manager Personalizado para Usuario Administrador
 # ---------------------------
-class UsuarioManager(BaseUserManager):
-    def create_user(self, id_institucional, correo, nombre, rol, contraseña=None):
+class AdminUserManager(BaseUserManager):
+    def create_user(self, id_institucional, correo, nombre, password=None):
         if not correo:
             raise ValueError("El usuario debe tener un correo electrónico")
         usuario = self.model(
             id_institucional=id_institucional,
             correo=self.normalize_email(correo),
             nombre=nombre,
-            rol=rol,
+            role='administrador'  # Forzamos el rol a 'administrador'
         )
-        if contraseña:
-            usuario.set_password(contraseña)
+        if password:
+            usuario.set_password(password)
         else:
             usuario.set_unusable_password()
         usuario.save(using=self._db)
         return usuario
 
-    def create_superuser(self, id_institucional, correo, nombre, rol='Administrador', contraseña=None):
+    def create_superuser(self, id_institucional, correo, nombre, password=None):
         usuario = self.create_user(
             id_institucional=id_institucional,
             correo=correo,
             nombre=nombre,
-            rol=rol,
-            contraseña=contraseña
+            password=password
         )
         usuario.is_admin = True
         usuario.is_staff = True
@@ -52,34 +57,40 @@ class UsuarioManager(BaseUserManager):
         return usuario
 
 # ---------------------------
-# Modelo Usuario
+# Modelo Usuario Administrador
 # ---------------------------
-class Usuario(AbstractBaseUser, PermissionsMixin):
-    ROL_CHOICES = [
-        ('Estudiante', 'Estudiante'),
-        ('Docente', 'Docente'),
-        ('Administrador', 'Administrador'),
+class AdminUsuario(AbstractBaseUser, PermissionsMixin):
+    ROLE_CHOICES = [
+        ('administrador', 'Administrador'),
     ]
 
-    id_institucional = models.CharField(max_length=6, unique=True, validators=[MinLengthValidator(6)])
+    id_institucional = models.CharField(
+        max_length=6,
+        unique=True,
+        validators=[MinLengthValidator(6)]
+    )
     nombre = models.CharField(max_length=100)
-    correo = models.EmailField(unique=True, validators=[validate_email])
-    rol = models.CharField(max_length=15, choices=ROL_CHOICES)
-    preferencias_alimenticias = models.TextField(blank=True)
-    restricciones_dieteticas = models.TextField(blank=True)
-    habitos_consumo = models.TextField(blank=True)
+    correo = models.EmailField(
+        unique=True,
+        validators=[validate_admin_email]
+    )
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default='administrador'
+    )
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_admin = models.BooleanField(default=False)
 
-    objects = UsuarioManager()
+    objects = AdminUserManager()
 
     USERNAME_FIELD = 'id_institucional'
-    REQUIRED_FIELDS = ['nombre', 'correo', 'rol']
+    REQUIRED_FIELDS = ['nombre', 'correo']
 
     def __str__(self):
-        return f"{self.nombre} ({self.id_institucional})"
+        return f"{self.nombre} ({self.id_institucional}) - {self.get_role_display()}"
 
 # ---------------------------
 # Modelo Categoria
@@ -133,7 +144,7 @@ class Item(models.Model):
     # Métodos para calificaciones y puntuaciones
     def get_calificacion_promedio(self):
         promedio = self.retroalimentacion_set.aggregate(Avg('calificacion'))['calificacion__avg']
-        return promedio or 0
+        return round(promedio, 1) if promedio else 0.0
 
     def get_total_votos(self):
         return self.retroalimentacion_set.count()
@@ -141,7 +152,7 @@ class Item(models.Model):
     def get_puntaje_compuesto(self):
         promedio = self.get_calificacion_promedio()
         votos = self.get_total_votos()
-        return promedio * log(votos + 1) if votos > 0 else 0
+        return round(promedio * log(votos + 1), 2) if votos > 0 else 0.0
 
 # ---------------------------
 # Modelo Carta
@@ -165,92 +176,6 @@ class CartaItem(models.Model):
         return f"{self.carta.nombre} - {self.item.nombre}"
 
 # ---------------------------
-# Modelo Reserva
-# ---------------------------
-class Reserva(models.Model):
-    ESTADO_CHOICES = [
-        ('Pendiente', 'Pendiente'),
-        ('Confirmada', 'Confirmada'),
-        ('Cancelada', 'Cancelada'),
-    ]
-
-    usuario = models.ForeignKey(Usuario, to_field='id_institucional', on_delete=models.CASCADE)
-    fecha_reserva = models.DateField()
-    fecha_hora_creacion = models.DateTimeField(auto_now_add=True)
-    estado = models.CharField(max_length=10, choices=ESTADO_CHOICES, default='Pendiente')
-    codigo_reserva = models.CharField(max_length=15, unique=True, blank=True, null=True)
-    reserva_items = models.ManyToManyField(Item, through='ReservaItem', related_name='reservas')
-
-    def __str__(self):
-        return f"Reserva {self.codigo_reserva} - {self.estado}"
-
-    def save(self, *args, **kwargs):
-        estado_anterior = None
-        if self.pk:
-            estado_anterior = Reserva.objects.get(pk=self.pk).estado
-        else:
-            estado_anterior = None
-
-        # Generar código de reserva si no existe
-        if not self.codigo_reserva:
-            while True:
-                nombres = self.usuario.nombre.split()
-                if len(nombres) >= 2:
-                    user_initials = ''.join([word[0] for word in nombres[:2]]).upper()
-                else:
-                    user_initials = (nombres[0][0]*2).upper()
-                random_number = ''.join(random.choices(string.digits, k=4))
-                codigo = f"TEC-{user_initials}{random_number}"
-                if not Reserva.objects.filter(codigo_reserva=codigo).exists():
-                    self.codigo_reserva = codigo
-                    break
-
-        super().save(*args, **kwargs)
-
-        # Verificar si el estado cambió a 'Confirmada' y crear el Pedido
-        if estado_anterior != 'Confirmada' and self.estado == 'Confirmada':
-            if not Pedido.objects.filter(reserva=self).exists():
-                pedido = Pedido.objects.create(
-                    usuario=self.usuario,
-                    fecha_pedido=self.fecha_reserva,
-                    estado='Reservado',  # Puedes ajustar el estado inicial si lo deseas
-                    reserva=self
-                )
-                # Crear los PedidoItem correspondientes
-                reserva_items = self.reserva_items_relations.all()
-                for reserva_item in reserva_items:
-                    PedidoItem.objects.create(
-                        pedido=pedido,
-                        item=reserva_item.item,
-                        cantidad=reserva_item.cantidad
-                    )
-                # Crear la transacción inicial
-                total_monto = pedido.calcular_total()
-                Transaccion.objects.create(
-                    pedido=pedido,
-                    metodo_pago='Otro',  # Ajusta según tu lógica
-                    estado='Pendiente',
-                    monto=total_monto
-                )
-
-    def calcular_total(self):
-        total = sum([
-            ri.item.precio * ri.cantidad for ri in self.reserva_items_relations.all()
-        ])
-        return total
-
-# ---------------------------
-# Modelo ReservaItem
-# ---------------------------
-class ReservaItem(models.Model):
-    reserva = models.ForeignKey(Reserva, on_delete=models.CASCADE, related_name='reserva_items_relations')
-    item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name='item_reservas')
-    cantidad = models.PositiveIntegerField(default=1)
-
-    def __str__(self):
-        return f"{self.item.nombre} x {self.cantidad}"
-
-# ---------------------------
 # Modelo Pedido
 # ---------------------------
 class Pedido(models.Model):
@@ -261,25 +186,41 @@ class Pedido(models.Model):
         ('Cancelado', 'Cancelado'),
     ]
 
-    usuario = models.ForeignKey(Usuario, to_field='id_institucional', on_delete=models.CASCADE)
+    usuario = models.ForeignKey(AdminUsuario, to_field='id_institucional', on_delete=models.CASCADE)
     carta = models.ForeignKey(Carta, on_delete=models.CASCADE, null=True, blank=True)
     fecha_pedido = models.DateField(auto_now_add=True)
     estado = models.CharField(max_length=10, choices=ESTADO_CHOICES, default='Reservado')
-    reserva = models.ForeignKey(Reserva, on_delete=models.SET_NULL, null=True, blank=True, related_name='pedidos')
     pedido_items = models.ManyToManyField(Item, through='PedidoItem', related_name='pedidos')
+    codigo_pedido = models.CharField(max_length=20, unique=True, blank=True, null=True)  # Campo agregado
 
     def __str__(self):
-        return f"Pedido de {self.usuario.nombre} - {self.estado}"
-
-    @property
-    def codigo_reserva(self):
-        return self.reserva.codigo_reserva if self.reserva else None
+        return f"Pedido de {self.usuario.nombre} - {self.estado} - {self.codigo_pedido}"
 
     def calcular_total(self):
         total = sum([
             (pi.item.precio or 0) * pi.cantidad for pi in self.pedido_item_relations.all()
         ])
-        return total or 0.0
+        return round(total, 2) or 0.0
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # 'codigo_pedido' se generará mediante la señal post_save
+
+# ---------------------------
+# Señal para Generar `codigo_pedido`
+# ---------------------------
+@receiver(post_save, sender=Pedido)
+def generar_codigo_pedido(sender, instance, created, **kwargs):
+    if created and not instance.codigo_pedido:
+        # Obtener las iniciales del nombre del usuario
+        nombres = instance.usuario.nombre.split()
+        initials = ''.join([n[0] for n in nombres[:2]]).upper()  # Tomar las primeras dos iniciales
+        # Generar cuatro dígitos aleatorios
+        random_digits = ''.join([str(random.randint(0, 9)) for _ in range(4)])
+        # Formatear el código de pedido
+        instance.codigo_pedido = f"TEC{initials}-{random_digits}"
+        # Guardar nuevamente para almacenar el codigo_pedido sin volver a llamar la señal
+        instance.save(update_fields=['codigo_pedido'])
 
 # ---------------------------
 # Modelo PedidoItem
@@ -296,7 +237,7 @@ class PedidoItem(models.Model):
 # Modelo Retroalimentacion
 # ---------------------------
 class Retroalimentacion(models.Model):
-    usuario = models.ForeignKey(Usuario, to_field='id_institucional', on_delete=models.CASCADE)
+    usuario = models.ForeignKey(AdminUsuario, to_field='id_institucional', on_delete=models.CASCADE)
     item = models.ForeignKey(Item, on_delete=models.CASCADE, null=True, blank=True)
     comentario = models.TextField(blank=True)
     calificacion = models.IntegerField()
@@ -311,7 +252,6 @@ class Retroalimentacion(models.Model):
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)
-        # Ya no es necesario actualizar campos en Item
 
 # ---------------------------
 # Modelo Transaccion
@@ -333,26 +273,25 @@ class Transaccion(models.Model):
     estado = models.CharField(max_length=15, choices=ESTADO_CHOICES)
     fecha = models.DateTimeField(auto_now_add=True)
     monto = models.DecimalField(max_digits=10, decimal_places=2)
+    realizador = models.ForeignKey(AdminUsuario, on_delete=models.SET_NULL, null=True, blank=True, related_name='transacciones_realizadas')
+    user_id_institucional = models.CharField(max_length=6, null=True, blank=True)
+    user_nombre = models.CharField(max_length=100, null=True, blank=True)
 
     def __str__(self):
-        return f"Transacción de {self.pedido.usuario.nombre if self.pedido else 'Desconocido'} - {self.estado}"
+        if self.realizador:
+            return f"Transacción realizada por {self.realizador.nombre} - {self.estado}"
+        elif self.user_nombre:
+            return f"Transacción realizada por {self.user_nombre} - {self.estado}"
+        else:
+            return f"Transacción de {self.pedido.usuario.nombre if self.pedido else 'Desconocido'} - {self.estado}"
 
-# ---------------------------
-# Modelo Carrito
-# ---------------------------
-class Carrito(models.Model):
-    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='carrito')
+    def clean(self):
+        # Evitar cambios en el estado si ya está en 'Completado' o 'Fallido'
+        if self.pk:
+            original = Transaccion.objects.get(pk=self.pk)
+            if original.estado in ['Completado', 'Fallido'] and self.estado != original.estado:
+                raise ValidationError("El estado de esta transacción ya no puede ser modificado.")
 
-    def __str__(self):
-        return f"Carrito de {self.usuario.nombre}"
-
-# ---------------------------
-# Modelo CarritoItem
-# ---------------------------
-class CarritoItem(models.Model):
-    carrito = models.ForeignKey(Carrito, on_delete=models.CASCADE, related_name='items')
-    item = models.ForeignKey(Item, on_delete=models.CASCADE)
-    cantidad = models.PositiveIntegerField(default=1)
-
-    def __str__(self):
-        return f"{self.item.nombre} x {self.cantidad} en {self.carrito}"
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)

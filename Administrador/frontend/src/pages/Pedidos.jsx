@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import api from '../api/axiosInstance';
+import React, { useEffect, useState } from 'react';
+import axiosInstance from '../api/axios'; // Importa la instancia de Axios
 import {
   Container,
   Typography,
@@ -54,6 +54,11 @@ const StyledCard = styled(Card)(({ theme }) => ({
   position: 'relative',
 }));
 
+// Transición para el diálogo
+const Transition = React.forwardRef(function Transition(props, ref) {
+  return <Slide direction="up" ref={ref} {...props} />;
+});
+
 function Pedidos() {
   // Definición de estados
   const [pedidos, setPedidos] = useState([]);
@@ -68,10 +73,13 @@ function Pedidos() {
     estado: 'Reservado',
     metodo_pago: 'Otro',
     pedido_items: [{ item: '', cantidad: 1 }],
+    realizador_id_institucional: '', // Nuevo campo para realizador
+    realizador_nombre: '', // Nuevo campo para realizador
   });
   const [itemError, setItemError] = useState(null);
+  const [adminInfo, setAdminInfo] = useState(null); // Información del administrador
 
-  // Efecto para cargar datos iniciales
+  // Efecto para cargar datos iniciales y la información del administrador
   useEffect(() => {
     cargarDatosIniciales();
   }, []);
@@ -81,15 +89,26 @@ function Pedidos() {
     setLoading(true);
     try {
       const [pedidosRes, usuariosRes, itemsRes] = await Promise.all([
-        api.get('/pedidos/'),
-        api.get('/usuarios/'),
-        api.get('/items/'),
+        axiosInstance.get('/pedidos/'),
+        axiosInstance.get('/admin-usuarios/'),
+        axiosInstance.get('/items/'),
       ]);
 
       setPedidos(pedidosRes.data.results || pedidosRes.data || []);
       setUsuarios(usuariosRes.data.results || usuariosRes.data || []);
-      setItems((itemsRes.data.results || itemsRes.data || []).filter((item) => item.disponible));
+      setItems(
+        (itemsRes.data.results || itemsRes.data || []).filter((item) => item.disponible)
+      );
+
+      // Obtener la información del administrador actual
+      // Asume que el frontend proporciona `adminIdInstitucional`
+      const adminIdInstitucional = localStorage.getItem('adminIdInstitucional'); // Por ejemplo
+      if (adminIdInstitucional) {
+        const adminRes = await axiosInstance.get(`/admin-usuarios/me/?id_institucional=${adminIdInstitucional}`);
+        setAdminInfo(adminRes.data);
+      }
     } catch (error) {
+      console.error('Error al cargar datos:', error);
       setError('Error al cargar los datos. Por favor, intenta de nuevo.');
     } finally {
       setLoading(false);
@@ -101,7 +120,7 @@ function Pedidos() {
   // Función para manejar cambios de estado en un pedido
   const handleEstadoChange = async (pedidoId, nuevoEstado) => {
     try {
-      const response = await api.patch(`/pedidos/${pedidoId}/`, { estado: nuevoEstado });
+      const response = await axiosInstance.patch(`/pedidos/${pedidoId}/`, { estado: nuevoEstado });
       setPedidos(
         pedidos.map((pedido) =>
           pedido.id === pedidoId ? { ...pedido, estado: response.data.estado } : pedido
@@ -110,6 +129,7 @@ function Pedidos() {
       setMensaje('Estado actualizado correctamente');
       setTimeout(() => setMensaje(null), 3000);
     } catch (error) {
+      console.error('Error al actualizar el estado del pedido:', error);
       setError('Error al actualizar el estado del pedido.');
     }
   };
@@ -120,7 +140,9 @@ function Pedidos() {
       const pedido = pedidos.find((p) => p.id === pedidoId);
       const transaccion = pedido.transacciones && pedido.transacciones[0];
       if (transaccion) {
-        await api.patch(`/transacciones/${transaccion.id}/`, { metodo_pago: nuevoMetodoPago });
+        const response = await axiosInstance.patch(`/transacciones/${transaccion.id}/`, {
+          metodo_pago: nuevoMetodoPago,
+        });
         setPedidos(
           pedidos.map((pedido) =>
             pedido.id === pedidoId
@@ -129,7 +151,7 @@ function Pedidos() {
                   transacciones: [
                     {
                       ...pedido.transacciones[0],
-                      metodo_pago: nuevoMetodoPago,
+                      metodo_pago: response.data.metodo_pago,
                     },
                   ],
                 }
@@ -142,6 +164,7 @@ function Pedidos() {
         setError('No se encontró la transacción asociada al pedido.');
       }
     } catch (error) {
+      console.error('Error al actualizar el método de pago del pedido:', error);
       setError('Error al actualizar el método de pago del pedido.');
     }
   };
@@ -150,11 +173,12 @@ function Pedidos() {
   const handleEliminarPedido = async (pedidoId) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este pedido?')) {
       try {
-        await api.delete(`/pedidos/${pedidoId}/`);
+        await axiosInstance.delete(`/pedidos/${pedidoId}/`);
         setPedidos(pedidos.filter((pedido) => pedido.id !== pedidoId));
         setMensaje('Pedido eliminado correctamente');
         setTimeout(() => setMensaje(null), 3000);
       } catch (error) {
+        console.error('Error al eliminar el pedido:', error);
         setError('Error al eliminar el pedido.');
       }
     }
@@ -169,6 +193,8 @@ function Pedidos() {
       estado: 'Reservado',
       metodo_pago: 'Otro',
       pedido_items: [{ item: '', cantidad: 1 }],
+      realizador_id_institucional: '',
+      realizador_nombre: '',
     });
     setItemError(null);
   };
@@ -198,24 +224,31 @@ function Pedidos() {
   // Función para crear un nuevo pedido
   const handleCrearPedido = async () => {
     const valid =
-      nuevoPedido.pedido_items.every((pi) => pi.item && pi.cantidad > 0) && nuevoPedido.usuario;
+      nuevoPedido.pedido_items.every((pi) => pi.item && pi.cantidad > 0) &&
+      nuevoPedido.usuario &&
+      nuevoPedido.metodo_pago &&
+      nuevoPedido.realizador_id_institucional &&
+      nuevoPedido.realizador_nombre;
     if (!valid) {
-      setItemError('Por favor, selecciona al menos un ítem, una cantidad válida y un usuario.');
+      setItemError('Por favor, selecciona al menos un ítem, una cantidad válida, un usuario, un método de pago y un realizador.');
       return;
     }
 
     const datosPedido = {
       usuario: nuevoPedido.usuario,
       estado: nuevoPedido.estado,
+      metodo_pago: nuevoPedido.metodo_pago,
       pedido_items: nuevoPedido.pedido_items.map((pi) => ({
         item: pi.item,
         cantidad: parseInt(pi.cantidad, 10),
       })),
-      metodo_pago: nuevoPedido.metodo_pago,
+      realizador_id_institucional: nuevoPedido.realizador_id_institucional,
+      realizador_nombre: nuevoPedido.realizador_nombre,
+      // 'fecha_pedido' es auto-generado por el backend
     };
 
     try {
-      const response = await api.post('/pedidos/', datosPedido);
+      const response = await axiosInstance.post('/pedidos/', datosPedido);
       setPedidos([...pedidos, response.data]);
       setMensaje('Pedido creado exitosamente');
       handleClose();
@@ -251,6 +284,15 @@ function Pedidos() {
   return (
     <StyledContainer>
       <Container maxWidth="md" sx={{ py: 4 }}>
+        {/* Información del Administrador */}
+        {adminInfo && (
+          <Box sx={{ mb: 4, textAlign: 'center', color: '#fff', textShadow: '2px 2px 4px rgba(0,0,0,0.7)' }}>
+            <Typography variant="h6">
+              Bienvenido, <strong>{adminInfo.nombre}</strong> ({adminInfo.role === 'administrador' ? 'Administrador' : 'Estudiante'})
+            </Typography>
+          </Box>
+        )}
+
         <Typography
           variant="h4"
           component="h1"
@@ -294,7 +336,7 @@ function Pedidos() {
           onClose={handleClose}
           maxWidth="sm"
           fullWidth
-          TransitionComponent={Slide}
+          TransitionComponent={Transition}
           keepMounted
           PaperProps={{
             style: {
@@ -373,16 +415,53 @@ function Pedidos() {
                   </span>
                 }
               >
-                <MenuItem value="Banca Movil">Banca Movil</MenuItem>
+                <MenuItem value="Banca Movil">Banca Móvil</MenuItem>
                 <MenuItem value="Tarjeta">Tarjeta</MenuItem>
                 <MenuItem value="Efectivo">Efectivo</MenuItem>
+                <MenuItem value="Otro">Otro</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Formulario para seleccionar realizador (Administrador) */}
+            <FormControl fullWidth sx={{ mt: 2 }}>
+              <InputLabel id="realizador-label">
+                <PersonIcon sx={{ mr: 1 }} /> Realizador
+              </InputLabel>
+              <Select
+                labelId="realizador-label"
+                value={nuevoPedido.realizador_id_institucional}
+                onChange={(e) => {
+                  const selectedRealizador = usuarios.find(
+                    (u) => u.id_institucional === e.target.value
+                  );
+                  setNuevoPedido({
+                    ...nuevoPedido,
+                    realizador_id_institucional: e.target.value,
+                    realizador_nombre: selectedRealizador ? selectedRealizador.nombre : '',
+                  });
+                }}
+                label={
+                  <span>
+                    <PersonIcon sx={{ mr: 1 }} />
+                    Realizador
+                  </span>
+                }
+              >
+                {usuarios.map((usuario) => (
+                  <MenuItem key={usuario.id_institucional} value={usuario.id_institucional}>
+                    {usuario.nombre}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
 
             {/* Lista de items del pedido */}
+            <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>
+              Items del Pedido
+            </Typography>
             {nuevoPedido.pedido_items.map((pedidoItem, index) => (
-              <Box key={index} sx={{ mt: 2, display: 'flex', alignItems: 'center' }}>
-                <FormControl fullWidth>
+              <Box key={index} sx={{ display: 'flex', alignItems: 'center', mb: 2, flexWrap: 'wrap' }}>
+                <FormControl fullWidth sx={{ mb: 1 }}>
                   <InputLabel id={`item-label-${index}`}>Ítem</InputLabel>
                   <Select
                     labelId={`item-label-${index}`}
@@ -403,7 +482,7 @@ function Pedidos() {
                   variant="outlined"
                   value={pedidoItem.cantidad}
                   onChange={(e) => handleItemChange(index, 'cantidad', e.target.value)}
-                  sx={{ mx: 2, width: '100px' }}
+                  sx={{ mx: 2, width: '100px', mb: 1 }}
                   InputProps={{ inputProps: { min: 1 } }}
                   required
                 />
@@ -457,7 +536,7 @@ function Pedidos() {
                   <CardContent>
                     <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                       <EventIcon sx={{ mr: 1 }} />
-                      Pedido #{pedido.id} - {pedido.estado}
+                      Pedido #{pedido.codigo_pedido} - {pedido.estado}
                     </Typography>
                     <Typography variant="body1">
                       <PersonIcon sx={{ mr: 1 }} />
@@ -465,11 +544,11 @@ function Pedidos() {
                     </Typography>
                     <Typography variant="body1">
                       <EventIcon sx={{ mr: 1 }} />
-                      Fecha: {pedido.fecha_pedido}
+                      Fecha: {new Date(pedido.fecha_pedido).toLocaleDateString()}
                     </Typography>
                     <Typography variant="body1">
                       <PaymentIcon sx={{ mr: 1 }} />
-                      Total: S/{(pedido.total_pedido ?? 0).toFixed(2)}
+                      Total: S/{pedido.total_pedido ? pedido.total_pedido.toFixed(2) : '0.00'}
                     </Typography>
                     <Typography variant="body1">
                       <PaymentIcon sx={{ mr: 1 }} />
@@ -479,17 +558,25 @@ function Pedidos() {
                         : 'No especificado'}
                     </Typography>
                     <Typography variant="body1" sx={{ mt: 1 }}>
-                      Items:
+                      Comidas:
                     </Typography>
                     <ul>
-                      {pedido.pedido_items.map((item) => (
-                        <li key={item.id}>
-                          {item.item_nombre} x {item.cantidad}
+                      {pedido.pedido_items && pedido.pedido_items.map((item) => (
+                        <li key={item.id} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+                          {item.item_imagen && (
+                            <img
+                              src={item.item_imagen}
+                              alt={item.item_nombre}
+                              style={{ width: '50px', height: '50px', objectFit: 'cover', marginRight: '10px' }}
+                            />
+                          )}
+                          <span>{item.item_nombre} x {item.cantidad}</span>
                         </li>
                       ))}
                     </ul>
                   </CardContent>
                   <CardActions sx={{ justifyContent: 'center', flexWrap: 'wrap' }}>
+                    {/* Selector para actualizar el estado del pedido */}
                     <FormControl sx={{ minWidth: 120, mb: 1 }}>
                       <InputLabel id={`estado-pedido-label-${pedido.id}`}>Estado</InputLabel>
                       <Select
@@ -504,6 +591,8 @@ function Pedidos() {
                         <MenuItem value="Cancelado">Cancelado</MenuItem>
                       </Select>
                     </FormControl>
+
+                    {/* Selector para actualizar el método de pago */}
                     <FormControl sx={{ minWidth: 120, ml: 2, mb: 1 }}>
                       <InputLabel id={`metodo-pago-label-${pedido.id}`}>Método de Pago</InputLabel>
                       <Select
@@ -516,11 +605,14 @@ function Pedidos() {
                         onChange={(e) => handleMetodoPagoChange(pedido.id, e.target.value)}
                         label="Método de Pago"
                       >
-                        <MenuItem value="Banca Movil">Banca Movil</MenuItem>
+                        <MenuItem value="Banca Movil">Banca Móvil</MenuItem>
                         <MenuItem value="Tarjeta">Tarjeta</MenuItem>
                         <MenuItem value="Efectivo">Efectivo</MenuItem>
+                        <MenuItem value="Otro">Otro</MenuItem>
                       </Select>
                     </FormControl>
+
+                    {/* Botón para eliminar el pedido */}
                     <Tooltip title="Eliminar Pedido">
                       <IconButton
                         color="error"
@@ -535,6 +627,11 @@ function Pedidos() {
               </motion.div>
             </Grid>
           ))}
+          {pedidos.length === 0 && (
+            <Grid item xs={12}>
+              <Alert severity="info">No hay pedidos disponibles.</Alert>
+            </Grid>
+          )}
         </Grid>
       </Container>
     </StyledContainer>

@@ -1,49 +1,86 @@
+# api/views.py
+
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from .models import (
-    Categoria, Usuario, Item, Carta, CartaItem, Pedido, Reserva,
-    Retroalimentacion, Transaccion, Carrito, CarritoItem
+    AdminUsuario, Categoria, Item, Carta, CartaItem, Pedido,
+    Retroalimentacion, Transaccion, PedidoItem
 )
 from .serializers import (
-    CategoriaSerializer, UsuarioSerializer, UsuarioCreateSerializer, ItemSerializer,
-    CartaSerializer, CartaItemSerializer, PedidoSerializer, PedidoCreateSerializer,
-    ReservaSerializer, ReservaCreateSerializer, RetroalimentacionSerializer,
-    TransaccionSerializer, MultipleReservaCreateSerializer, MultiplePedidoCreateSerializer,
-    CarritoSerializer, CarritoItemSerializer
+    CategoriaSerializer, AdminUsuarioSerializer, AdminUsuarioCreateSerializer,
+    ItemSerializer, CartaSerializer, CartaItemSerializer, PedidoSerializer,
+    PedidoCreateSerializer, RetroalimentacionSerializer, TransaccionSerializer,
+    PedidoItemSerializer, MultiplePedidoCreateSerializer
 )
-from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework import filters
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 from rest_framework.views import APIView
 from django.conf import settings
+from rest_framework.authtoken.models import Token
+from rest_framework.authtoken.views import ObtainAuthToken
+from django.shortcuts import get_object_or_404
 import openai
 import datetime
 import requests
+import logging
+
+# Configuración del logger
+logger = logging.getLogger(__name__)
 
 # ---------------------------
-# ViewSet para Usuario
+# ViewSet para AdminUsuario
 # ---------------------------
-class UsuarioViewSet(viewsets.ModelViewSet):
-    queryset = Usuario.objects.all()
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+class AdminUsuarioViewSet(viewsets.ModelViewSet):
+    queryset = AdminUsuario.objects.all()
+    permission_classes = [IsAuthenticated]  # Requiere autenticación
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['rol']
+    filterset_fields = ['id_institucional', 'role']
     search_fields = ['nombre', 'correo']
     ordering_fields = ['nombre', 'correo']
     ordering = ['nombre']
 
     def get_serializer_class(self):
         if self.action == 'create':
-            return UsuarioCreateSerializer
-        return UsuarioSerializer
+            return AdminUsuarioCreateSerializer
+        return AdminUsuarioSerializer
 
-    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    # ---------------------------
+    # Acción personalizada 'me'
+    # ---------------------------
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def me(self, request):
-        serializer = self.get_serializer(request.user)
-        return Response(serializer.data)
+        """
+        Endpoint para obtener la información del usuario actual.
+        """
+        usuario = request.user
+        serializer = self.get_serializer(usuario)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+# ---------------------------
+# Vista para Autenticación y Obtención de Token
+# ---------------------------
+class CustomObtainAuthToken(ObtainAuthToken):
+    """
+    Vista personalizada para obtener el token de autenticación.
+    Espera 'id_institucional' y 'password' en el cuerpo de la solicitud.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        id_institucional = request.data.get('id_institucional')
+        password = request.data.get('password')
+        if not id_institucional or not password:
+            return Response({'error': 'Se requieren id_institucional y password.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            usuario = AdminUsuario.objects.get(id_institucional=id_institucional)
+        except AdminUsuario.DoesNotExist:
+            return Response({'error': 'Usuario no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        if not usuario.check_password(password):
+            return Response({'error': 'Contraseña incorrecta.'}, status=status.HTTP_400_BAD_REQUEST)
+        token, created = Token.objects.get_or_create(user=usuario)
+        return Response({'token': token.key, 'role': usuario.role, 'nombre': usuario.nombre}, status=status.HTTP_200_OK)
 
 # ---------------------------
 # ViewSet para Categoria
@@ -51,8 +88,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 class CategoriaViewSet(viewsets.ModelViewSet):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['nombre']
     ordering_fields = ['nombre']
@@ -64,8 +100,7 @@ class CategoriaViewSet(viewsets.ModelViewSet):
 class ItemViewSet(viewsets.ModelViewSet):
     queryset = Item.objects.select_related('categoria').all()
     serializer_class = ItemSerializer
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['categoria', 'disponible']
     search_fields = ['nombre', 'descripcion']
@@ -78,8 +113,7 @@ class ItemViewSet(viewsets.ModelViewSet):
 class CartaViewSet(viewsets.ModelViewSet):
     queryset = Carta.objects.all()
     serializer_class = CartaSerializer
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['fecha', 'disponible']
     search_fields = ['nombre']
@@ -92,8 +126,7 @@ class CartaViewSet(viewsets.ModelViewSet):
 class CartaItemViewSet(viewsets.ModelViewSet):
     queryset = CartaItem.objects.select_related('carta', 'item').all()
     serializer_class = CartaItemSerializer
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['carta', 'item']
     search_fields = ['carta__nombre', 'item__nombre']
@@ -101,42 +134,16 @@ class CartaItemViewSet(viewsets.ModelViewSet):
     ordering = ['carta__nombre', 'item__nombre']
 
 # ---------------------------
-# ViewSet para Reserva
-# ---------------------------
-class ReservaViewSet(viewsets.ModelViewSet):
-    queryset = Reserva.objects.select_related('usuario').prefetch_related('reserva_items_relations__item__categoria').all()
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['usuario__id_institucional', 'estado', 'fecha_reserva']
-    search_fields = ['codigo_reserva']
-    ordering_fields = ['fecha_reserva', 'estado']
-    ordering = ['-fecha_reserva']
-
-    def get_serializer_class(self):
-        if self.action in ['create', 'update', 'partial_update']:
-            return ReservaCreateSerializer
-        return ReservaSerializer
-
-    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
-    def bulk_create(self, request):
-        serializer = MultipleReservaCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        reservas = serializer.save()
-        return Response(ReservaSerializer(reservas, many=True).data, status=status.HTTP_201_CREATED)
-
-# ---------------------------
 # ViewSet para Pedido
 # ---------------------------
 class PedidoViewSet(viewsets.ModelViewSet):
-    queryset = Pedido.objects.select_related('usuario', 'carta', 'reserva').prefetch_related(
+    queryset = Pedido.objects.select_related('usuario', 'carta').prefetch_related(
         'pedido_item_relations__item__categoria', 'transacciones'
     ).all()
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['usuario__id_institucional', 'estado', 'fecha_pedido', 'carta', 'reserva']
-    search_fields = ['codigo_reserva']
+    filterset_fields = ['usuario__id_institucional', 'estado', 'fecha_pedido', 'carta']
+    search_fields = ['codigo_pedido']
     ordering_fields = ['fecha_pedido', 'estado']
     ordering = ['-fecha_pedido']
 
@@ -145,12 +152,16 @@ class PedidoViewSet(viewsets.ModelViewSet):
             return PedidoCreateSerializer
         return PedidoSerializer
 
-    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def bulk_create(self, request):
+        """
+        Acción personalizada para crear múltiples pedidos en una sola solicitud.
+        Espera una estructura JSON con una clave 'pedidos' que contiene una lista de pedidos.
+        """
         serializer = MultiplePedidoCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         pedidos = serializer.save()
-        return Response(PedidoSerializer(pedidos, many=True).data, status=status.HTTP_201_CREATED)
+        return Response(PedidoSerializer(pedidos, many=True, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 # ---------------------------
 # ViewSet para Retroalimentacion
@@ -158,8 +169,7 @@ class PedidoViewSet(viewsets.ModelViewSet):
 class RetroalimentacionViewSet(viewsets.ModelViewSet):
     queryset = Retroalimentacion.objects.select_related('usuario', 'item').all()
     serializer_class = RetroalimentacionSerializer
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['usuario__id_institucional', 'item', 'calificacion']
     search_fields = ['comentario']
@@ -170,134 +180,49 @@ class RetroalimentacionViewSet(viewsets.ModelViewSet):
 # ViewSet para Transaccion
 # ---------------------------
 class TransaccionViewSet(viewsets.ModelViewSet):
-    queryset = Transaccion.objects.select_related('pedido').all()
+    queryset = Transaccion.objects.select_related('pedido', 'realizador').all()
     serializer_class = TransaccionSerializer
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['pedido', 'metodo_pago', 'estado']
+    filterset_fields = ['pedido', 'metodo_pago', 'estado', 'realizador__id_institucional']
+    search_fields = ['realizador__nombre', 'user_nombre', 'pedido__usuario__nombre']
     ordering_fields = ['fecha', 'monto']
     ordering = ['-fecha']
-
-# ---------------------------
-# ViewSet para CarritoItem
-# ---------------------------
-class CarritoItemViewSet(viewsets.ModelViewSet):
-    queryset = CarritoItem.objects.select_related('carrito', 'item').all()
-    serializer_class = CarritoItemSerializer
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['carrito__usuario__id_institucional', 'item']
-    ordering_fields = ['item__nombre']
-    ordering = ['item__nombre']
-
-# ---------------------------
-# ViewSet para Carrito
-# ---------------------------
-class CarritoViewSet(viewsets.ModelViewSet):
-    queryset = Carrito.objects.select_related('usuario').prefetch_related('items__item').all()
-    serializer_class = CarritoSerializer
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
-    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['usuario__id_institucional']
-    ordering_fields = ['usuario__nombre']
-    ordering = ['usuario__nombre']
-
-    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
-    def my_cart(self, request):
-        usuario = request.user
-        carrito = Carrito.objects.filter(usuario=usuario).first()
-        if not carrito:
-            return Response({"mensaje": "El carrito está vacío."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = self.get_serializer(carrito)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'], permission_classes=[AllowAny])
-    def add_item(self, request, pk=None):
-        carrito = self.get_object()
-        item_id = request.data.get('item_id')
-        cantidad = request.data.get('cantidad', 1)
-        item = Item.objects.filter(id=item_id).first()
-        if not item:
-            return Response({"error": "El ítem no existe."}, status=status.HTTP_400_BAD_REQUEST)
-        carrito_item, created = CarritoItem.objects.get_or_create(carrito=carrito, item=item)
-        if not created:
-            carrito_item.cantidad += int(cantidad)
-            carrito_item.save()
-        else:
-            carrito_item.cantidad = int(cantidad)
-            carrito_item.save()
-        return Response({"mensaje": "Ítem agregado al carrito."}, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=['post'], permission_classes=[AllowAny])
-    def remove_item(self, request, pk=None):
-        carrito = self.get_object()
-        item_id = request.data.get('item_id')
-        carrito_item = CarritoItem.objects.filter(carrito=carrito, item__id=item_id).first()
-        if not carrito_item:
-            return Response({"error": "El ítem no se encuentra en el carrito."}, status=status.HTTP_404_NOT_FOUND)
-        carrito_item.delete()
-        return Response({"mensaje": "Ítem eliminado del carrito."}, status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=True, methods=['post'], permission_classes=[AllowAny])
-    def clear_cart(self, request, pk=None):
-        carrito = self.get_object()
-        carrito.items.all().delete()
-        return Response({"mensaje": "El carrito ha sido vaciado."}, status=status.HTTP_204_NO_CONTENT)
-
-# ---------------------------
-# ViewSet para Múltiples Reservas (Opcional)
-# ---------------------------
-class MultipleReservaCreateViewSet(viewsets.ViewSet):
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
-
-    def create(self, request):
-        serializer = MultipleReservaCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        reservas = serializer.save()
-        return Response(ReservaSerializer(reservas, many=True).data, status=status.HTTP_201_CREATED)
-
-# ---------------------------
-# ViewSet para Múltiples Pedidos (Opcional)
-# ---------------------------
-class MultiplePedidoCreateViewSet(viewsets.ViewSet):
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
-
-    def create(self, request):
-        serializer = MultiplePedidoCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        pedidos = serializer.save()
-        return Response(PedidoSerializer(pedidos, many=True).data, status=status.HTTP_201_CREATED)
-
-# ---------------------------
-# Vista para el Chatbot
-# ---------------------------
-# ... (importaciones y código previo) ...
 
 # ---------------------------
 # Vista para el Chatbot
 # ---------------------------
 class ChatbotView(APIView):
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]  # Requiere autenticación
 
     def post(self, request):
         try:
             user_input = request.data.get('message')
             if not user_input:
-                return Response({'error': 'No se proporcionó un mensaje'}, status=400)
+                logger.warning("Solicitud sin mensaje.")
+                return Response({'error': 'No se proporcionó un mensaje'}, status=status.HTTP_400_BAD_REQUEST)
 
-            if not getattr(settings, 'OPENAI_API_KEY', None):
-                return Response({'error': 'Clave de API de OpenAI no configurada'}, status=500)
+            # Verificar todas las claves de API
+            missing_keys = []
+            if not settings.OPENAI_API_KEY:
+                missing_keys.append('OPENAI_API_KEY')
+            if not settings.EDAMAM_APP_ID:
+                missing_keys.append('EDAMAM_APP_ID')
+            if not settings.EDAMAM_APP_KEY:
+                missing_keys.append('EDAMAM_APP_KEY')
+
+            if missing_keys:
+                logger.error(f"Claves de API faltantes: {', '.join(missing_keys)}")
+                return Response({'error': f'Claves de API faltantes: {", ".join(missing_keys)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            # Configurar la clave de API de OpenAI
+            openai.api_key = settings.OPENAI_API_KEY
 
             # Obtener datos de items disponibles
             items = Item.objects.filter(disponible=True).select_related('categoria')
             if not items.exists():
-                return Response({'error': 'No hay ítems disponibles'}, status=404)
+                logger.info("No hay ítems disponibles.")
+                return Response({'error': 'No hay ítems disponibles'}, status=status.HTTP_404_NOT_FOUND)
 
             # Información de los items
             items_info = []
@@ -327,7 +252,7 @@ class ChatbotView(APIView):
                     'calificacion_promedio': calificacion_promedio,
                     'total_votos': total_votos,
                     'categoria': item.categoria.nombre,
-                    'calorias': f"{calorias} kcal" if calorias != 'No disponible' else calorias,
+                    'calorias': f"{calorias} kcal" if isinstance(calorias, (int, float)) else calorias,
                     'descripcion': item.descripcion or 'Sin descripción',
                     'nutrientes': {
                         'proteinas': f"{proteinas:.1f} g" if isinstance(proteinas, (int, float)) else proteinas,
@@ -423,26 +348,30 @@ class ChatbotView(APIView):
                     {"role": "user", "content": user_input},
                 ]
 
-                openai.api_key = settings.OPENAI_API_KEY
                 response = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
                     messages=messages,
                     max_tokens=700,
                     temperature=0.7,
                 )
-
+                logger.info(f"OpenAI API Response: {response}")
                 assistant_response = response.choices[0].message['content'].strip()
                 return Response({'response': assistant_response})
 
-        except openai.OpenAIError as e:
-            return Response({'error': f'Error de OpenAI: {str(e)}'}, status=500)
+        except openai.error.OpenAIError as e:
+            logger.exception("Error con la API de OpenAI.")
+            return Response({'error': f'Error con la API de OpenAI: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except requests.RequestException as e:
+            logger.exception("Error al conectar con la API de Edamam.")
+            return Response({'error': f'Error al conectar con la API de Edamam: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception as e:
-            return Response({'error': f'Error al procesar la solicitud: {str(e)}'}, status=500)
+            logger.exception("Error inesperado en ChatbotView.")
+            return Response({'error': f'Ocurrió un error inesperado: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    # Funciones auxiliares
     def obtener_info_nutricional(self, nombre_item):
         try:
             url = 'https://api.edamam.com/api/nutrition-data'
-            # Incluir una cantidad y unidad para mejorar la precisión
             ingr = f"1 serving {nombre_item}"
             params = {
                 'app_id': settings.EDAMAM_APP_ID,
@@ -450,13 +379,15 @@ class ChatbotView(APIView):
                 'ingr': ingr,
             }
             response = requests.get(url, params=params)
+            logger.info(f"Edamam API Response: {response.status_code}")
             data = response.json()
             if response.status_code == 200 and data.get('calories') and data.get('totalNutrients'):
                 return data
             else:
+                logger.warning(f"Información nutricional no disponible para: {nombre_item}")
                 return None
         except Exception as e:
-            print(f"Error al obtener información nutricional: {e}")
+            logger.exception(f"Error al obtener información nutricional para {nombre_item}: {e}")
             return None
 
     def obtener_nombre_comida_para_api(self, nombre_item):
@@ -466,10 +397,9 @@ class ChatbotView(APIView):
             'arroz con leche': 'rice pudding',
             'gelatina': 'gelatin dessert',
             'flan': 'custard',
-            'pan con pato': 'chicken sandwich',
+            'pan con pato': 'duck sandwich',  # Corregido a 'duck sandwich'
             'pan con queso': 'cheese sandwich',
             'chicharron de pollo': 'fried chicken',
             'galletas': 'cookies',
-
         }
         return mapping.get(nombre_item.lower(), nombre_item)

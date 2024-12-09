@@ -1,13 +1,48 @@
+// src/pages/Cartas.jsx
+
 import React, { useState, useEffect } from 'react';
-import api from '../api/axiosInstance';
+import axiosInstance from '../api/axios'; // Asegúrate de que esta ruta es correcta
 import { 
     Container, Typography, Grid, Card, CardContent, CardActions, Button, 
-    CircularProgress, Box, Alert, CardMedia, Rating, Dialog, DialogActions, 
+    CircularProgress, Box, Alert, Rating, Dialog, DialogActions, 
     DialogContent, DialogTitle, TextField, Switch, Select, MenuItem, 
     FormControl, InputLabel 
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import { styled } from '@mui/material/styles';
+import { motion } from 'framer-motion';
+import fondoComedor3 from '../assets/comedor3.jpg'; // Imagen de fondo local
+
+// Estilos personalizados utilizando MUI
+const StyledContainer = styled('div')(({ theme }) => ({
+  backgroundImage: `url(${fondoComedor3})`,
+  backgroundSize: 'cover',
+  backgroundPosition: 'center',
+  backgroundAttachment: 'fixed',
+  minHeight: '100vh',
+  color: '#000',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  padding: theme.spacing(4),
+  boxSizing: 'border-box',
+}));
+
+const StyledCard = styled(Card)(({ theme }) => ({
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  borderRadius: 12,
+  boxShadow: theme.shadows[5],
+  transition: 'transform 0.3s, box-shadow 0.3s',
+  backgroundColor: 'rgba(255, 255, 255, 0.85)', // Fondo semitransparente
+  backdropFilter: 'blur(5px)', // Efecto de desenfoque
+  '&:hover': {
+    transform: 'scale(1.05)',
+    boxShadow: theme.shadows[10],
+  },
+}));
 
 function Cartas() {
     const [items, setItems] = useState([]);
@@ -26,8 +61,8 @@ function Cartas() {
         setLoading(true);
         try {
             const [itemsRes, categoriasRes] = await Promise.all([
-                api.get('/items/'),
-                api.get('/categorias/')
+                axiosInstance.get('/items/'),
+                axiosInstance.get('/categorias/')
             ]);
             setItems(itemsRes.data.results || []);
             setCategorias(categoriasRes.data.results || []);
@@ -42,7 +77,7 @@ function Cartas() {
 
     const handleToggleDisponible = async (id, disponible) => {
         try {
-            const response = await api.patch(`/items/${id}/`, { disponible: !disponible });
+            const response = await axiosInstance.patch(`/items/${id}/`, { disponible: !disponible });
             setItems(items.map(item => item.id === id ? response.data : item));
             setMensaje(`Item ${response.data.disponible ? 'activado' : 'desactivado'} correctamente.`);
         } catch (error) {
@@ -59,8 +94,9 @@ function Cartas() {
     const handleSaveEdit = async () => {
         if (selectedItem) {
             try {
-                const response = await api.put(`/items/${selectedItem.id}/`, selectedItem);
-                setItems(items.map(item => item.id === selectedItem.id ? response.data : item));
+                const { id, ...datosActualizados } = selectedItem;
+                const response = await axiosInstance.put(`/items/${id}/`, datosActualizados);
+                setItems(items.map(item => item.id === id ? response.data : item));
                 setMensaje('Item editado correctamente.');
                 setOpenEdit(false);
                 setSelectedItem(null);
@@ -74,7 +110,7 @@ function Cartas() {
     const handleDeleteItem = async (id) => {
         if (window.confirm('¿Estás seguro de que deseas eliminar este item?')) {
             try {
-                await api.delete(`/items/${id}/`);
+                await axiosInstance.delete(`/items/${id}/`);
                 setItems(items.filter(item => item.id !== id));
                 setMensaje('Item eliminado correctamente.');
             } catch (error) {
@@ -92,6 +128,16 @@ function Cartas() {
         }));
     };
 
+    // Función para cerrar el mensaje después de unos segundos
+    useEffect(() => {
+        if (mensaje) {
+            const timer = setTimeout(() => {
+                setMensaje('');
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [mensaje]);
+
     if (loading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
@@ -101,10 +147,10 @@ function Cartas() {
     }
 
     return (
-        <div style={{ backgroundImage: 'url(src/assets/comedor.jpg)', backgroundSize: 'cover', backgroundPosition: 'center', minHeight: '100vh' }}>
-            <Container sx={{ py: 4, zIndex: 1, position: 'relative' }}>
-                <Typography variant="h4" component="h1" align="center" gutterBottom color="white">
-                    Administrar Items
+        <StyledContainer>
+            <Container sx={{ py: 4, backgroundColor: 'rgba(255, 255, 255, 0.6)', borderRadius: 2 }}>
+                <Typography variant="h4" component="h1" align="center" gutterBottom>
+                    Administrar Comidas
                 </Typography>
 
                 {mensaje && (
@@ -121,47 +167,75 @@ function Cartas() {
                 <Grid container spacing={4} justifyContent="center">
                     {items.map(item => (
                         <Grid item key={item.id} xs={12} sm={6} md={4} lg={3}>
-                            <Card sx={{
-                                maxWidth: 345, borderRadius: '12px', boxShadow: 3, overflow: 'hidden',
-                                '&:hover': { transform: 'scale(1.05)', transition: 'transform 0.3s ease' },
-                                backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(10px)',
-                                position: 'relative', zIndex: 1
-                            }}>
-                                <CardMedia
-                                    component="img"
-                                    height="200"
-                                    image={item.imagen || "https://via.placeholder.com/300"}
-                                    alt={item.nombre}
-                                    sx={{ objectFit: 'cover' }}
-                                />
-                                <CardContent>
-                                    <Typography variant="h6" color="textPrimary">{item.nombre}</Typography>
-                                    <Typography variant="body2" color="textSecondary">Precio: S/{item.precio}</Typography>
-                                    <Typography variant="body2" color="textSecondary">Categoría: {item.categoria_nombre}</Typography>
-                                    <Typography variant="body2" color="textSecondary">Disponible: {item.disponible ? 'Sí' : 'No'}</Typography>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
-                                        <Rating 
-                                            value={item.calificacion_promedio || 0} 
-                                            readOnly 
-                                            precision={0.5} 
-                                        />
-                                        <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                                            ({item.votos} votos)
+                            <motion.div
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.3 }}
+                            >
+                                <StyledCard>
+                                    <CardContent sx={{ flexGrow: 1 }}>
+                                        <Typography variant="h6" color="textPrimary" gutterBottom sx={{
+                                            fontWeight: 'bold',
+                                            textShadow: '1px 1px 5px rgba(0, 0, 0, 0.7)',
+                                            color: '#000',
+                                            fontSize: '1rem',
+                                        }}>
+                                            {item.nombre}
                                         </Typography>
-                                    </Box>
-                                </CardContent>
-                                <CardActions>
-                                    <Button onClick={() => handleToggleDisponible(item.id, item.disponible)} variant="outlined" color="primary">
-                                        {item.disponible ? 'Desactivar' : 'Activar'}
-                                    </Button>
-                                    <Button onClick={() => handleEditItem(item)} startIcon={<EditIcon />} variant="outlined">
-                                        Editar
-                                    </Button>
-                                    <Button onClick={() => handleDeleteItem(item.id)} color="error" startIcon={<DeleteIcon />} variant="outlined">
-                                        Eliminar
-                                    </Button>
-                                </CardActions>
-                            </Card>
+                                        <Typography variant="body2" color="textSecondary" sx={{ color: '#000', fontSize: '0.9rem' }}>
+                                            Precio: S/{item.precio}
+                                        </Typography>
+                                        <Typography variant="body2" color="textSecondary" sx={{ color: '#000', fontSize: '0.9rem' }}>
+                                            Categoría: {item.categoria_nombre}
+                                        </Typography>
+                                        <Typography variant="body2" color="textSecondary" sx={{ color: '#000', fontSize: '0.9rem' }}>
+                                            Disponible: {item.disponible ? 'Sí' : 'No'}
+                                        </Typography>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                                            <Rating 
+                                                name={`rating-${item.id}`} 
+                                                value={item.calificacion_promedio || 0} 
+                                                readOnly 
+                                                precision={0.5} 
+                                            />
+                                            <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                                                ({item.votos} votos)
+                                            </Typography>
+                                        </Box>
+                                    </CardContent>
+                                    <CardActions>
+                                        {/* Botón de Desactivar/Activar eliminado según solicitud */}
+                                        <Button 
+                                            onClick={() => handleToggleDisponible(item.id, item.disponible)} 
+                                            variant="outlined" 
+                                            color="primary"
+                                            size="small"
+                                            sx={{ mr: 1 }}
+                                        >
+                                            {item.disponible ? 'Desactivar' : 'Activar'}
+                                        </Button>
+                                        <Button 
+                                            onClick={() => handleEditItem(item)} 
+                                            startIcon={<EditIcon />} 
+                                            variant="outlined" 
+                                            size="small"
+                                        >
+                                            Editar
+                                        </Button>
+                                        <Button 
+                                            onClick={() => handleDeleteItem(item.id)} 
+                                            color="error" 
+                                            startIcon={<DeleteIcon />} 
+                                            variant="outlined" 
+                                            size="small"
+                                        >
+                                            Eliminar
+                                        </Button>
+                                    </CardActions>
+                                </StyledCard>
+                            </motion.div>
                         </Grid>
                     ))}
                     {items.length === 0 && !loading && (
@@ -173,8 +247,9 @@ function Cartas() {
                     )}
                 </Grid>
 
-                <Dialog open={openEdit} onClose={() => setOpenEdit(false)}>
-                    <DialogTitle sx={{ backgroundColor: '#2196f3', color: '#fff' }}>Editar Item</DialogTitle>
+                {/* Diálogo para editar ítems */}
+                <Dialog open={openEdit} onClose={() => setOpenEdit(false)} fullWidth maxWidth="sm">
+                    <DialogTitle>Editar Item</DialogTitle>
                     <DialogContent>
                         <TextField
                             autoFocus
@@ -194,7 +269,7 @@ function Cartas() {
                             fullWidth
                             value={selectedItem?.precio || ''}
                             onChange={handleInputChange}
-                            InputProps={{ inputProps: { min: 0 } }}
+                            InputProps={{ inputProps: { min: 0, step: '0.01' } }}
                             required
                         />
                         <FormControl fullWidth margin="dense" required>
@@ -223,12 +298,16 @@ function Cartas() {
                         </Box>
                     </DialogContent>
                     <DialogActions>
-                        <Button onClick={() => setOpenEdit(false)}>Cancelar</Button>
-                        <Button onClick={handleSaveEdit} variant="contained" color="primary">Guardar</Button>
+                        <Button onClick={() => setOpenEdit(false)} color="secondary">
+                            Cancelar
+                        </Button>
+                        <Button onClick={handleSaveEdit} variant="contained" color="primary">
+                            Guardar
+                        </Button>
                     </DialogActions>
                 </Dialog>
             </Container>
-        </div>
+        </StyledContainer>
     );
 }
 

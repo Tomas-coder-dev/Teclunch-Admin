@@ -1,36 +1,35 @@
-# project/urls.py
+# src/urls.py
 
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
 from api import views
-# from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+# Crear una instancia del router predeterminado de DRF
 router = routers.DefaultRouter()
-router.register(r'usuarios', views.UsuarioViewSet, basename='usuario')
+
+# Registrar los ViewSets con el router
+router.register(r'admin-usuarios', views.AdminUsuarioViewSet, basename='adminusuario')
 router.register(r'categorias', views.CategoriaViewSet, basename='categoria')
 router.register(r'items', views.ItemViewSet, basename='item')
 router.register(r'cartas', views.CartaViewSet, basename='carta')
 router.register(r'cartaitems', views.CartaItemViewSet, basename='cartaitem')
-router.register(r'reservas', views.ReservaViewSet, basename='reserva')
-router.register(r'pedidos', views.PedidoViewSet, basename='pedido')
+router.register(r'pedidos', views.PedidoViewSet, basename='pedido')  # Incluye la acción 'bulk_create'
 router.register(r'retroalimentacion', views.RetroalimentacionViewSet, basename='retroalimentacion')
 router.register(r'transacciones', views.TransaccionViewSet, basename='transaccion')
-router.register(r'carrito', views.CarritoViewSet, basename='carrito')
 
 urlpatterns = [
+    # Ruta para el panel de administración de Django
     path('admin/', admin.site.urls),
-    path('api/', include(router.urls)),  # Rutas de la API
-
-    # Endpoints de autenticación JWT (comentados temporalmente)
-    # path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    # path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-
-    # Autenticación de la API navegable de Django REST Framework
-    path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
-
-    # Ruta para el Chatbot
-    path('chatbot/', views.ChatbotView.as_view(), name='chatbot'),
+    
+    # Incluir todas las rutas generadas por el router bajo el prefijo 'api/'
+    path('api/', include(router.urls)),
+    
+    # Ruta para el Chatbot dentro de 'api/'
+    path('api/chatbot/', views.ChatbotView.as_view(), name='chatbot'),
+    
+    # Ruta para obtener el token de autenticación
+    path('api/auth/login/', views.CustomObtainAuthToken.as_view(), name='api_token_auth'),
 ]
 
 # Para servir archivos de medios durante el desarrollo

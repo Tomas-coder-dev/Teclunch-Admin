@@ -1,35 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import api from '../api/axiosInstance';
+// src/pages/Usuarios.jsx
+import React, { useEffect, useState } from 'react';
+import axios from '../api/axios';
 import {
     Container, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-    Paper, Alert, CircularProgress, Box, Grid
+    Paper, Alert, CircularProgress, Box, Grid, useMediaQuery, useTheme
 } from '@mui/material';
+import fondo1 from '../assets/fondo1.jpg'; // Ruta relativa recomendada
 
-function Usuarios() {
+const Usuarios = () => {
     const [usuarios, setUsuarios] = useState([]);
-    const [mensaje, setMensaje] = useState('');
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
 
-    useEffect(() => {
-        cargarUsuarios();
-    }, []);
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-    const cargarUsuarios = async () => {
+    const fetchUsuarios = async () => {
         try {
-            setLoading(true);
-            const response = await api.get('/usuarios/');
-            setUsuarios(Array.isArray(response.data) ? response.data : response.data.results || []);
-        } catch (error) {
-            console.error('Error al obtener usuarios:', error);
-            setMensaje('Error al cargar usuarios');
-        } finally {
+            const response = await axios.get('/admin-usuarios/');
+            setUsuarios(response.data.results || response.data);
+            setLoading(false);
+        } catch (err) {
+            console.error('Error al obtener usuarios:', err);
+            setError('Error al obtener usuarios.');
             setLoading(false);
         }
     };
 
+    useEffect(() => {
+        fetchUsuarios();
+    }, []);
+
     return (
         <Box sx={{
-            backgroundImage: 'url(src/assets/comedor2.jpg)',
+            backgroundImage: `url(${fondo1})`, // Asegúrate de que la ruta sea correcta
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             minHeight: '100vh',
@@ -38,20 +42,23 @@ function Usuarios() {
             justifyContent: 'center',
             padding: 2,
         }}>
-            <Container sx={{
-                backgroundColor: 'rgba(255, 255, 255, 0.7)', // Fondo con opacidad para ver el fondo pero mantener la legibilidad
+            <Container maxWidth="lg" sx={{
+                backgroundColor: 'rgba(255, 255, 255, 0.9)', // Fondo con mayor opacidad para mejor legibilidad
                 borderRadius: 4,
                 padding: 4,
                 boxShadow: 6,
                 backdropFilter: 'blur(8px)', // Agregar un leve desenfoque al fondo
             }}>
-                <Typography variant="h4" component="h1" align="center" gutterBottom color="primary">
+                <Typography variant="h4" component="h1" align="center" gutterBottom color="primary" sx={{
+                    fontWeight: 'bold',
+                    textShadow: '2px 2px 4px rgba(0, 0, 0, 0.2)',
+                }}>
                     Lista de Usuarios
                 </Typography>
 
-                {mensaje && (
-                    <Alert severity={mensaje.includes('Error') ? 'error' : 'success'} sx={{ mb: 4 }}>
-                        {mensaje}
+                {error && (
+                    <Alert severity="error" sx={{ mb: 4 }}>
+                        {error}
                     </Alert>
                 )}
 
@@ -61,17 +68,17 @@ function Usuarios() {
                     </Box>
                 ) : (
                     <Grid container spacing={3} justifyContent="center">
-                        <Grid item xs={12} md={10}>
+                        <Grid item xs={12}>
                             <TableContainer component={Paper} sx={{
                                 boxShadow: 3,
                                 borderRadius: 3,
                                 overflow: 'hidden',
-                                backgroundColor: 'rgba(255, 255, 255, 0.6)', // Fondo semitransparente para la tabla
+                                backgroundColor: 'rgba(255, 255, 255, 0.8)', // Fondo semitransparente para la tabla
                                 backdropFilter: 'blur(5px)', // Desenfoque leve del fondo
                             }}>
                                 <Table sx={{ minWidth: 650 }}>
                                     <TableHead>
-                                        <TableRow sx={{ backgroundColor: '#0288d1' }}>
+                                        <TableRow sx={{ backgroundColor: theme.palette.primary.main }}>
                                             <TableCell sx={{ color: '#ffffff', fontWeight: 'bold' }}>ID Institucional</TableCell>
                                             <TableCell sx={{ color: '#ffffff', fontWeight: 'bold' }}>Nombre</TableCell>
                                             <TableCell sx={{ color: '#ffffff', fontWeight: 'bold' }}>Correo</TableCell>
@@ -81,14 +88,14 @@ function Usuarios() {
                                     <TableBody>
                                         {usuarios.length > 0 ? (
                                             usuarios.map((usuario) => (
-                                                <TableRow key={usuario.id || usuario.id_institucional} hover sx={{
+                                                <TableRow key={usuario.id_institucional} hover sx={{
                                                     '&:hover': { backgroundColor: '#f1f1f1' },
                                                     transition: 'background-color 0.3s ease'
                                                 }}>
                                                     <TableCell>{usuario.id_institucional}</TableCell>
                                                     <TableCell>{usuario.nombre}</TableCell>
                                                     <TableCell>{usuario.correo}</TableCell>
-                                                    <TableCell>{usuario.rol}</TableCell>
+                                                    <TableCell>{usuario.role}</TableCell>
                                                 </TableRow>
                                             ))
                                         ) : (
@@ -105,6 +112,6 @@ function Usuarios() {
             </Container>
         </Box>
     );
-}
+};
 
 export default Usuarios;

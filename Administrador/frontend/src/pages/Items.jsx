@@ -1,84 +1,118 @@
+// src/pages/Items.jsx
+
 import React, { useState, useEffect } from 'react';
-import api from '../api/axiosInstance';
+import axiosInstance from '../api/axios'; // Asegúrate de que esta ruta es correcta
 import {
-  Container, Typography, Grid, Card, CardContent, CardMedia, Box, Rating, Button, Alert,
-  Select, MenuItem, FormControl, InputLabel, TextField, Switch, IconButton, CardActions
+  Typography,
+  Grid,
+  Card,
+  CardContent,
+  Box,
+  Button,
+  Alert,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  TextField,
+  Switch,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import EditIcon from '@mui/icons-material/Edit';
+import AddIcon from '@mui/icons-material/Add';
 import { styled } from '@mui/material/styles';
 import { motion } from 'framer-motion';
+import Rating from '@mui/material/Rating'; // Importación añadida
+import fondoComedor2 from '../assets/comedor2.jpg'; // Imagen de fondo local
 
-// Estilos personalizados
-const StyledContainer = styled('div')({
-  backgroundImage: 'url(/src/assets/comedor.jpg)',
+// Estilos personalizados utilizando MUI
+const StyledContainer = styled('div')(({ theme }) => ({
+  backgroundImage: `url(${fondoComedor2})`,
   backgroundSize: 'cover',
   backgroundPosition: 'center',
+  backgroundAttachment: 'fixed',
   minHeight: '100vh',
-  color: 'white',
+  color: '#000',
   display: 'flex',
   flexDirection: 'column',
-  justifyContent: 'center',
   alignItems: 'center',
-  textAlign: 'center',
+  padding: theme.spacing(4),
   boxSizing: 'border-box',
-});
+}));
 
 const StyledCard = styled(Card)(({ theme }) => ({
   height: '100%',
   display: 'flex',
   flexDirection: 'column',
-  borderRadius: 8,
-  boxShadow: 10,
-  transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+  borderRadius: 12,
+  boxShadow: theme.shadows[5],
+  transition: 'transform 0.3s, box-shadow 0.3s',
   '&:hover': {
     transform: 'scale(1.05)',
-    boxShadow: '0px 12px 30px rgba(0, 0, 0, 0.4)',
+    boxShadow: theme.shadows[10],
   },
 }));
 
 function Items() {
+  // Definición de estados
   const [items, setItems] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
   const [nuevoItem, setNuevoItem] = useState({
-    nombre: '', 
-    precio: '', 
-    disponible: true, 
-    categoria: ''
+    nombre: '',
+    precio: '',
+    disponible: true,
+    categoria: '',
   });
-  const [mensaje, setMensaje] = useState('');
+  const [nuevaCategoria, setNuevaCategoria] = useState({
+    nombre: ''
+  });
+  const [mensaje, setMensaje] = useState({ tipo: '', texto: '' });
   const [modoEdicion, setModoEdicion] = useState(false);
   const [itemEditado, setItemEditado] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [openCategoriaDialog, setOpenCategoriaDialog] = useState(false);
+  const [openItemDialog, setOpenItemDialog] = useState(false);
 
   useEffect(() => {
-    cargarItems();
-    cargarCategorias();
+    cargarDatos();
   }, []);
 
-  const cargarItems = async () => {
+  // Función para cargar datos iniciales
+  const cargarDatos = async () => {
+    setSubmitting(true);
     try {
-      const response = await api.get('items/');
-      const itemsDisponibles = response.data.results ? response.data.results : [];
+      const [itemsRes, categoriasRes] = await Promise.all([
+        axiosInstance.get('/items/'),
+        axiosInstance.get('/categorias/'),
+      ]);
+
+      // Procesar items para asegurar que 'precio' es un número
+      const itemsDisponibles = (itemsRes.data.results || itemsRes.data || []).map(item => ({
+        ...item,
+        precio: !isNaN(Number(item.precio)) ? Number(item.precio) : 0,
+      }));
+
+      console.log('Items Disponibles:', itemsDisponibles); // Depuración
       setItems(itemsDisponibles);
-    } catch (error) {
-      console.error('Error al obtener items:', error);
-      setMensaje('Hubo un problema al cargar los items.');
-    }
-  };
 
-  const cargarCategorias = async () => {
-    try {
-      const response = await api.get('categorias/');
-      const categoriasDisponibles = response.data.results ? response.data.results : [];
+      const categoriasDisponibles = categoriasRes.data.results || categoriasRes.data || [];
       setCategorias(categoriasDisponibles);
+
+      setMensaje({ tipo: '', texto: '' });
     } catch (error) {
-      console.error('Error al obtener categorías:', error);
-      setMensaje('Hubo un problema al cargar las categorías.');
+      console.error('Error al obtener datos:', error);
+      setMensaje({ tipo: 'error', texto: 'Hubo un problema al cargar los datos.' });
+    } finally {
+      setSubmitting(false);
     }
   };
 
+  // Funciones para manejar cambios y acciones
+
+  // Función para manejar cambios en el formulario de ítems
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setNuevoItem({
@@ -87,20 +121,38 @@ function Items() {
     });
   };
 
+  // Función para manejar cambios en el formulario de categorías
+  const handleCategoriaChange = (e) => {
+    const { name, value } = e.target;
+    setNuevaCategoria({
+      ...nuevaCategoria,
+      [name]: value
+    });
+  };
+
+  // Función para agregar o editar un item
   const agregarOEditarItem = async (e) => {
     e.preventDefault();
     setSubmitting(true);
 
     // Validación de los campos obligatorios
-    if (!nuevoItem.nombre || !nuevoItem.precio || !nuevoItem.categoria) {
-      setMensaje('Por favor completa los campos obligatorios.');
+    if (!nuevoItem.nombre || nuevoItem.precio === '' || !nuevoItem.categoria) {
+      setMensaje({ tipo: 'error', texto: 'Por favor completa los campos obligatorios.' });
+      setSubmitting(false);
+      return;
+    }
+
+    // Convertir 'precio' a número y manejar NaN
+    const precioNumerico = parseFloat(nuevoItem.precio);
+    if (isNaN(precioNumerico)) {
+      setMensaje({ tipo: 'error', texto: 'El precio debe ser un número válido.' });
       setSubmitting(false);
       return;
     }
 
     const datosItem = {
       nombre: nuevoItem.nombre,
-      precio: parseFloat(nuevoItem.precio),
+      precio: precioNumerico,
       categoria: nuevoItem.categoria,
       disponible: nuevoItem.disponible,
     };
@@ -108,55 +160,96 @@ function Items() {
     try {
       let response;
       if (modoEdicion) {
-        response = await api.put(`items/${itemEditado.id}/`, datosItem);
+        // Realizar la solicitud PUT para editar el item
+        const { id, ...datosActualizados } = itemEditado;
+        response = await axiosInstance.put(`items/${id}/`, datosActualizados);
+        // Asegurarse de que 'precio' es un número
+        response.data.precio = !isNaN(Number(response.data.precio)) ? Number(response.data.precio) : 0;
+        // Actualizar el estado de los items
         setItems(items.map(item => item.id === response.data.id ? response.data : item));
-        setMensaje('Item actualizado correctamente.');
+        setMensaje({ tipo: 'success', texto: 'Item actualizado correctamente.' });
       } else {
-        response = await api.post('items/', datosItem);
+        // Realizar la solicitud POST para agregar un nuevo item
+        response = await axiosInstance.post('items/', datosItem);
+        // Asegurarse de que 'precio' es un número
+        response.data.precio = !isNaN(Number(response.data.precio)) ? Number(response.data.precio) : 0;
+        // Actualizar el estado de los items
         setItems([...items, response.data]);
-        setMensaje('Item agregado correctamente.');
+        setMensaje({ tipo: 'success', texto: 'Item agregado correctamente.' });
       }
       resetForm();
     } catch (error) {
       console.error('Error al agregar/editar item:', error);
-      setMensaje(modoEdicion ? 'Error al actualizar el item.' : 'Error al agregar el item.');
+      // Manejar errores específicos del servidor
+      if (error.response && error.response.data) {
+        const errores = Object.values(error.response.data).join(' ');
+        setMensaje({ tipo: 'error', texto: `Error: ${errores}` });
+      } else {
+        setMensaje({ tipo: 'error', texto: modoEdicion ? 'Error al actualizar el item.' : 'Error al agregar el item.' });
+      }
     } finally {
       setSubmitting(false);
-      setTimeout(() => setMensaje(''), 3000);
+      // Limpiar el mensaje después de 3 segundos
+      setTimeout(() => setMensaje({ tipo: '', texto: '' }), 3000);
     }
   };
 
-  const eliminarItem = async (id) => {
-    if (window.confirm('¿Estás seguro de que deseas eliminar este item?')) {
-      try {
-        await api.delete(`items/${id}/`);
-        setItems(items.filter((item) => item.id !== id));
-        setMensaje('Item eliminado correctamente.');
-        setTimeout(() => setMensaje(''), 3000);
-      } catch (error) {
-        console.error('Error al eliminar item:', error);
-        setMensaje('Error al eliminar el item.');
-      }
-    }
-  };
-
+  // Función para habilitar el modo de edición
   const habilitarModoEdicion = (item) => {
     setModoEdicion(true);
     setItemEditado(item);
     setNuevoItem({
       nombre: item.nombre,
-      precio: item.precio,
+      precio: item.precio.toString(),
       disponible: item.disponible,
       categoria: item.categoria,
     });
+    setOpenItemDialog(true);
   };
 
+  // Función para reiniciar el formulario
   const resetForm = () => {
     setNuevoItem({ nombre: '', precio: '', disponible: true, categoria: '' });
     setModoEdicion(false);
     setItemEditado(null);
+    setOpenItemDialog(false);
   };
 
+  // Función para agregar una nueva categoría
+  const agregarCategoria = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+
+    // Validación de los campos obligatorios
+    if (!nuevaCategoria.nombre) {
+      setMensaje({ tipo: 'error', texto: 'Por favor ingresa un nombre para la categoría.' });
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const response = await axiosInstance.post('categorias/', nuevaCategoria);
+      setCategorias([...categorias, response.data]);
+      setMensaje({ tipo: 'success', texto: 'Categoría agregada correctamente.' });
+      setNuevaCategoria({ nombre: '' });
+      setOpenCategoriaDialog(false);
+    } catch (error) {
+      console.error('Error al agregar categoría:', error);
+      setMensaje({ tipo: 'error', texto: 'Error al agregar la categoría.' });
+    } finally {
+      setSubmitting(false);
+      // Limpiar el mensaje después de 3 segundos
+      setTimeout(() => setMensaje({ tipo: '', texto: '' }), 3000);
+    }
+  };
+
+  // Función para abrir el diálogo de agregar ítems
+  const handleAddItem = () => {
+    resetForm();
+    setOpenItemDialog(true);
+  };
+
+  // Filtrar items según la categoría seleccionada
   const itemsFiltrados = categoriaSeleccionada === 'Todos' 
     ? items 
     : items.filter(item => item.categoria === categoriaSeleccionada);
@@ -166,44 +259,42 @@ function Items() {
       <Typography variant="h4" component="h1" gutterBottom sx={{
         fontWeight: 'bold', 
         textShadow: '2px 2px 5px rgba(0, 0, 0, 0.6)',
-        color: '#000',
-        fontSize: '1.8rem',
+        color: '#fff',
+        fontSize: '2rem',
         '@media (max-width:600px)': {
-          fontSize: '1.5rem', // Ajustar el tamaño en pantallas pequeñas
+          fontSize: '1.5rem',
         }
       }}>
-        Comidas Disponibles
+        Administrar Items
       </Typography>
 
-      {mensaje && (
-        <Alert severity={mensaje.includes('Error') ? 'error' : 'success'} sx={{
+      {/* Mostrar mensajes de éxito o error */}
+      {mensaje.texto && (
+        <Alert severity={mensaje.tipo} sx={{
           mb: 4, 
           maxWidth: 600, 
           borderRadius: 2, 
           textAlign: 'center',
           fontSize: '1.1rem',
           fontWeight: 'bold',
-          backgroundColor: mensaje.includes('Error') ? 'rgba(255, 0, 0, 0.7)' : 'rgba(0, 255, 0, 0.7)',
+          backgroundColor: mensaje.tipo === 'error' ? 'rgba(255, 0, 0, 0.7)' : 'rgba(0, 255, 0, 0.7)',
           color: '#fff'
         }}>
-          {mensaje}
+          {mensaje.texto}
         </Alert>
       )}
 
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'center', width: '100%' }}>
+      {/* Selector de Categoría y Botones para Agregar */}
+      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 2 }}>
         <FormControl variant="outlined" sx={{ minWidth: 200, borderRadius: 2 }}>
-          <InputLabel id="categoria-label">Categoría</InputLabel>
+          <InputLabel>Categoría</InputLabel>
           <Select
-            labelId="categoria-label"
+            label="Categoría"
             value={categoriaSeleccionada}
             onChange={(e) => setCategoriaSeleccionada(e.target.value)}
-            label="Categoría"
             sx={{
               backgroundColor: 'rgba(255, 255, 255, 0.9)',
               borderRadius: 2,
-              '& .MuiSelect-root': {
-                paddingRight: '1rem',
-              }
             }}
           >
             <MenuItem value="Todos">Todos</MenuItem>
@@ -214,29 +305,41 @@ function Items() {
             ))}
           </Select>
         </FormControl>
+        <Button
+          variant="contained"
+          color="primary"
+          startIcon={<AddIcon />}
+          onClick={handleAddItem}
+          sx={{ borderRadius: 20, padding: '10px 20px' }}
+        >
+          Agregar Item
+        </Button>
+        <Button
+          variant="contained"
+          color="secondary"
+          startIcon={<AddIcon />}
+          onClick={() => setOpenCategoriaDialog(true)}
+          sx={{ borderRadius: 20, padding: '10px 20px' }}
+        >
+          Agregar Categoría
+        </Button>
       </Box>
 
-      <Grid container spacing={2} sx={{ justifyContent: 'center', flexGrow: 1 }}>
+      {/* Lista de Items */}
+      <Grid container spacing={2} justifyContent="center">
         {itemsFiltrados.length > 0 ? (
           itemsFiltrados.map(item => (
-            <Grid item key={item.id} xs={12} sm={6} md={4}>
+            <Grid item key={item.id} xs={12} sm={6} md={4} lg={3}>
               <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3 }}
               >
                 <StyledCard>
-                  <CardMedia
-                    component="img"
-                    height="200"
-                    image={item.imagen || "https://via.placeholder.com/350x200"}
-                    alt={item.nombre}
-                    sx={{ borderTopLeftRadius: 8, borderTopRightRadius: 8 }}
-                  />
-                  <CardContent>
-                    <Typography variant="h6" sx={{
+                  <CardContent sx={{ flexGrow: 1 }}>
+                    <Typography variant="h6" color="textPrimary" gutterBottom sx={{
                       fontWeight: 'bold',
                       textShadow: '1px 1px 5px rgba(0, 0, 0, 0.7)',
                       color: '#000',
@@ -244,89 +347,73 @@ function Items() {
                     }}>
                       {item.nombre}
                     </Typography>
-                    <Typography variant="body2" sx={{ color: '#000', fontSize: '0.9rem' }}>
-                      Precio: S/{item.precio}
+                    <Typography variant="body2" color="textSecondary" sx={{ color: '#000', fontSize: '0.9rem' }}>
+                      Precio: S/{typeof item.precio === 'number' ? item.precio.toFixed(2) : 'N/A'}
                     </Typography>
-                    <Typography variant="body2" sx={{ color: '#000', fontSize: '0.9rem' }}>
-                      Categoría: {item.categoria_nombre}
+                    <Typography variant="body2" color="textSecondary" sx={{ color: '#000', fontSize: '0.9rem' }}>
+                      Categoría: {item.categoria_nombre || 'Sin categoría'}
                     </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
-                      <Rating name="read-only" value={item.calificacion_promedio || 0} readOnly precision={0.5} />
-                    </Box>
+                    {/* Mostrar rating si existe */}
+                    {item.calificacion_promedio !== undefined && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                        <Rating 
+                          name={`rating-${item.id}`} 
+                          value={item.calificacion_promedio} 
+                          readOnly 
+                          precision={0.5} 
+                        />
+                        <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                          ({item.votos} votos)
+                        </Typography>
+                      </Box>
+                    )}
                   </CardContent>
-                  <CardActions sx={{ justifyContent: 'flex-end' }}>
-                    <IconButton color="primary" onClick={() => habilitarModoEdicion(item)}>
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton color="error" onClick={() => eliminarItem(item.id)}>
-                      <DeleteIcon />
-                    </IconButton>
-                  </CardActions>
+                  {/* Se ha eliminado el Box con los botones de acciones */}
                 </StyledCard>
               </motion.div>
             </Grid>
           ))
         ) : (
-          <Typography variant="body1" color="text.secondary" sx={{ mt: 4 }}>
-            No hay items disponibles en esta categoría.
-          </Typography>
+          <Grid item xs={12}>
+            <Alert severity="info" sx={{ backgroundColor: '#f3f4f6', color: '#333' }}>
+              No hay items disponibles en esta categoría.
+            </Alert>
+          </Grid>
         )}
       </Grid>
 
-      {/* Formulario para agregar o editar ítems */}
-      <Box component="form" onSubmit={agregarOEditarItem} sx={{
-        mt: 6,
-        backgroundColor: 'rgba(255, 255, 255, 0.85)',
-        padding: 4,
-        borderRadius: 8,
-        boxShadow: 10,
-        width: '100%',
-        maxWidth: 600,
-        '@media (max-width:600px)': {
-          padding: 2,
-        }
-      }}>
-        <Typography variant="h5" component="h2" gutterBottom sx={{
-          fontWeight: 'bold',
-          marginBottom: 4,
-          textAlign: 'center',
-          color: '#ff6600',
-          fontSize: '1.4rem',
-        }}>
-          {modoEdicion ? 'Editar Item' : 'Agregar Nuevo Item'}
-        </Typography>
-        <Grid container spacing={2}>
-          <Grid item xs={12} sm={6}>
+      {/* Diálogo para agregar o editar ítems */}
+      <Dialog open={openItemDialog} onClose={resetForm} fullWidth maxWidth="sm">
+        <DialogTitle>{modoEdicion ? 'Editar Item' : 'Agregar Nuevo Item'}</DialogTitle>
+        <Box component="form" noValidate autoComplete="off" onSubmit={agregarOEditarItem}>
+          <DialogContent>
             <TextField
+              autoFocus
+              margin="dense"
               label="Nombre"
               name="nombre"
+              fullWidth
+              variant="outlined"
               value={nuevoItem.nombre}
               onChange={handleInputChange}
-              fullWidth
               required
-              variant="outlined"
-              sx={{ borderRadius: 2 }}
             />
-          </Grid>
-          <Grid item xs={12} sm={6}>
             <TextField
+              margin="dense"
               label="Precio"
               name="precio"
               type="number"
+              fullWidth
+              variant="outlined"
               value={nuevoItem.precio}
               onChange={handleInputChange}
-              fullWidth
+              inputProps={{ min: 0, step: '0.01' }}
               required
-              variant="outlined"
-              inputProps={{ min: 0 }}
-              sx={{ borderRadius: 2 }}
             />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <FormControl fullWidth required variant="outlined" sx={{ borderRadius: 2 }}>
-              <InputLabel id="categoria-select-label">Categoría</InputLabel>
+            <FormControl fullWidth margin="dense" variant="outlined" required>
+              <InputLabel>Categoría</InputLabel>
               <Select
-                labelId="categoria-select-label"
+                label="Categoría"
                 name="categoria"
                 value={nuevoItem.categoria}
                 onChange={handleInputChange}
@@ -338,42 +425,55 @@ function Items() {
                 ))}
               </Select>
             </FormControl>
-          </Grid>
-          <Grid item xs={12}>
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <Typography variant="body1" color="text.secondary" sx={{ mr: 2 }}>
-                Disponible
-              </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
+              <Typography variant="body1">Disponible:</Typography>
               <Switch
                 checked={nuevoItem.disponible}
                 onChange={handleInputChange}
                 name="disponible"
+                color="primary"
               />
             </Box>
-          </Grid>
-        </Grid>
-
-        <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
-          <Button
-            variant="contained"
-            color="primary"
-            type="submit"
-            disabled={submitting}
-            sx={{
-              borderRadius: 20,
-              padding: '12px 24px',
-              fontWeight: 'bold',
-              fontSize: '1.1rem',
-              transition: 'background-color 0.3s ease',
-              '&:hover': {
-                backgroundColor: '#ff8c00'
-              }
-            }}
-          >
-            {modoEdicion ? 'Actualizar' : 'Agregar'} Item
-          </Button>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={resetForm} color="secondary">
+              Cancelar
+            </Button>
+            <Button type="submit" color="primary" variant="contained" disabled={submitting}>
+              {modoEdicion ? 'Actualizar' : 'Agregar'} Item
+            </Button>
+          </DialogActions>
         </Box>
-      </Box>
+      </Dialog>
+
+      {/* Diálogo para agregar categorías */}
+      <Dialog open={openCategoriaDialog} onClose={() => setOpenCategoriaDialog(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Agregar Nueva Categoría</DialogTitle>
+        <Box component="form" onSubmit={agregarCategoria} noValidate>
+          <DialogContent>
+            <TextField
+              autoFocus
+              margin="dense"
+              name="nombre"
+              label="Nombre de la Categoría"
+              type="text"
+              fullWidth
+              variant="outlined"
+              value={nuevaCategoria.nombre}
+              onChange={handleCategoriaChange}
+              required
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setOpenCategoriaDialog(false)} color="secondary">
+              Cancelar
+            </Button>
+            <Button type="submit" color="primary" variant="contained" disabled={submitting}>
+              Agregar
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
     </StyledContainer>
   );
 }
