@@ -192,6 +192,22 @@ class TransaccionViewSet(viewsets.ModelViewSet):
 # ---------------------------
 # Vista para el Chatbot
 # ---------------------------
+# api/views.py
+
+import datetime
+import logging
+import openai
+import requests
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from .models import Item, Categoria
+from django.conf import settings
+
+# Configuración del logger
+logger = logging.getLogger(__name__)
+
 class ChatbotView(APIView):
     permission_classes = [IsAuthenticated]  # Requiere autenticación
 
@@ -204,12 +220,15 @@ class ChatbotView(APIView):
 
             # Verificar todas las claves de API
             missing_keys = []
-            if not settings.OPENAI_API_KEY:
-                missing_keys.append('OPENAI_API_KEY')
-            if not settings.EDAMAM_APP_ID:
-                missing_keys.append('EDAMAM_APP_ID')
-            if not settings.EDAMAM_APP_KEY:
-                missing_keys.append('EDAMAM_APP_KEY')
+            required_keys = {
+                'OPENAI_API_KEY': settings.OPENAI_API_KEY,
+                'EDAMAM_APP_ID': settings.EDAMAM_APP_ID,
+                'EDAMAM_APP_KEY': settings.EDAMAM_APP_KEY
+            }
+
+            for key, value in required_keys.items():
+                if not value:
+                    missing_keys.append(key)
 
             if missing_keys:
                 logger.error(f"Claves de API faltantes: {', '.join(missing_keys)}")
@@ -270,24 +289,17 @@ class ChatbotView(APIView):
             fecha_actual = datetime.datetime.now().strftime("%d/%m/%Y")
 
             # Analizar si el usuario solicita una tabla calórica
-            solicita_tabla_calorica = any(keyword in user_input.lower() for keyword in ['tabla calórica', 'tabla calorica', 'tabla de calorías', 'tabla de calorias'])
+            solicita_tabla_calorica = any(keyword in user_input.lower() for keyword in [
+                'tabla calórica', 'tabla calorica', 'tabla de calorías', 'tabla de calorias'
+            ])
 
             if solicita_tabla_calorica:
                 # Verificar si el usuario menciona un ítem específico
-                palabras_usuario = user_input.lower().split()
                 nombres_items = [item['nombre'].lower() for item in items_info]
-
-                # Buscar coincidencias entre las palabras del usuario y los nombres de los ítems
-                items_solicitados = []
-                for nombre_item in nombres_items:
-                    if nombre_item in user_input.lower():
-                        items_solicitados.append(nombre_item)
+                items_solicitados = [nombre for nombre in nombres_items if nombre in user_input.lower()]
 
                 # Si se encontraron ítems solicitados, filtrar items_info
-                if items_solicitados:
-                    items_filtrados = [item for item in items_info if item['nombre'].lower() in items_solicitados]
-                else:
-                    items_filtrados = items_info  # Mostrar todos si no se especifica un ítem
+                items_filtrados = [item for item in items_info if item['nombre'].lower() in items_solicitados] if items_solicitados else items_info
 
                 # Crear una tabla calórica detallada
                 tabla_calorica = (
@@ -368,7 +380,7 @@ class ChatbotView(APIView):
             logger.exception("Error inesperado en ChatbotView.")
             return Response({'error': f'Ocurrió un error inesperado: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # Funciones auxiliares
+    # Funciones auxiliares dentro de la clase
     def obtener_info_nutricional(self, nombre_item):
         try:
             url = 'https://api.edamam.com/api/nutrition-data'
@@ -379,7 +391,7 @@ class ChatbotView(APIView):
                 'ingr': ingr,
             }
             response = requests.get(url, params=params)
-            logger.info(f"Edamam API Response: {response.status_code}")
+            logger.info(f"Edamam API Response: {response.status_code} para {nombre_item}")
             data = response.json()
             if response.status_code == 200 and data.get('calories') and data.get('totalNutrients'):
                 return data
@@ -393,13 +405,25 @@ class ChatbotView(APIView):
     def obtener_nombre_comida_para_api(self, nombre_item):
         # Mapeo de nombres de platos a ingredientes reconocidos por la API
         mapping = {
-            'causa': 'potato with tuna',
+            'causa': 'mashed potato with tuna',
             'arroz con leche': 'rice pudding',
             'gelatina': 'gelatin dessert',
             'flan': 'custard',
-            'pan con pato': 'duck sandwich',  # Corregido a 'duck sandwich'
+            'pan con pato': 'duck sandwich',  # Asegúrate de que este mapeo sea correcto
             'pan con queso': 'cheese sandwich',
             'chicharron de pollo': 'fried chicken',
             'galletas': 'cookies',
+            'ceviche': 'ceviche (raw fish marinated in citrus)',
+            'lomo saltado': 'stir-fried beef with onions, tomatoes, and French fries',
+            'aji de gallina': 'chicken in a spicy, creamy sauce',
+            'papas a la huancaina': 'potatoes with spicy cheese sauce',
+            'tamales': 'steamed corn dough with meat or vegetables',
+            'tacu tacu': 'rice and beans fried together',
+            'anticuchos': 'grilled skewers, often with beef heart',
+            'causa rellena': 'layered potato dish filled with tuna or chicken',
+            'sopa seca': 'Peruvian dry spaghetti with a flavorful sauce',
+            'mote con hueso': 'hominy corn with pork',
+            'pisco sour': 'cocktail made with pisco, lemon, egg white, and bitters',
+            'inca kola': 'popular Peruvian soft drink (yellow soda)'
         }
         return mapping.get(nombre_item.lower(), nombre_item)

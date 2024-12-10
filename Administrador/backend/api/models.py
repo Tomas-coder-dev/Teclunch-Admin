@@ -12,6 +12,7 @@ from django.dispatch import receiver
 from math import log
 from django.db.models import Avg  # Añadido para Aggregate functions
 
+
 # ---------------------------
 # Validadores
 # ---------------------------

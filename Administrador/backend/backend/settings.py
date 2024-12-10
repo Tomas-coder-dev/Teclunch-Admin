@@ -18,6 +18,7 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 # Hosts permitidos
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = ['0.0.0.0', '*']
 
 # Clave de API de OpenAI (debe estar en el archivo .env)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
