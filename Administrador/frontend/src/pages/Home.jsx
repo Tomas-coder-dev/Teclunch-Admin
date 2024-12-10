@@ -1,140 +1,454 @@
 // src/pages/Home.jsx
-import React, { useEffect, useState } from 'react';
-import axios from '../api/axios';
-import WelcomeMessage from '../components/WelcomeMessage';
-import Button from '../components/Button';
-import madera from '../assets/madera.jpg'; // Ruta relativa recomendada
+
+import React, { useEffect, useState, useCallback } from 'react';
+import axiosInstance from '../api/axios';
+import {
+    Container,
+    Typography,
+    Grid,
+    Card,
+    CardContent,
+    CardHeader,
+    IconButton,
+    Box,
+    CircularProgress,
+    Alert,
+    Snackbar,
+    Button,
+    Tooltip,
+    Badge,
+    List,
+    ListItem,
+    ListItemText,
+    Divider,
+} from '@mui/material';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import FastfoodIcon from '@mui/icons-material/Fastfood';
+import AssignmentIcon from '@mui/icons-material/Assignment';
+import ChatIcon from '@mui/icons-material/Chat';
+import InfoIcon from '@mui/icons-material/Info';
+import LogoutIcon from '@mui/icons-material/Logout';
+import { styled } from '@mui/material/styles';
+import madera from '../assets/madera.jpg'; // Asegúrate de que la ruta es correcta
+import { Link } from 'react-router-dom';
+import TransaccionIcon from '@mui/icons-material/ReceiptLong'; // Icono personalizado para transacciones
+
+// Estilos personalizados
+const StyledContainer = styled(Container)(({ theme }) => ({
+    paddingTop: theme.spacing(4),
+    paddingBottom: theme.spacing(4),
+    backgroundImage: `url(${madera})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    minHeight: '100vh',
+}));
+
+const Overlay = styled(Box)(({ theme }) => ({
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    padding: theme.spacing(4),
+    borderRadius: theme.spacing(2),
+    boxShadow: theme.shadows[5],
+    maxWidth: '1200px',
+    margin: '0 auto',
+}));
+
+const StatsCard = styled(Card)(({ theme }) => ({
+    display: 'flex',
+    alignItems: 'center',
+    padding: theme.spacing(2),
+    backgroundColor: theme.palette.primary.main,
+    color: theme.palette.common.white,
+}));
+
+const QuickAccessButton = styled(Button)(({ theme }) => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: theme.spacing(2),
+    color: theme.palette.common.white,
+    backgroundColor: theme.palette.secondary.main,
+    '&:hover': {
+        backgroundColor: theme.palette.secondary.dark,
+    },
+    textTransform: 'none',
+}));
+
+const NotificationAlert = styled(Alert)(({ theme }) => ({
+    marginBottom: theme.spacing(2),
+}));
 
 const Home = () => {
     const [usuario, setUsuario] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [stats, setStats] = useState({
-        usuarios: 0,
         pedidos: 0,
-        categorias: 0,
         items: 0,
+        cartasActivas: 0,
     });
+    const [pendingTransactions, setPendingTransactions] = useState([]);
+    const [snackbarOpen, setSnackbarOpen] = useState(false);
 
-    const fetchUsuario = async () => {
+    // Función para cerrar el Snackbar
+    const handleSnackbarClose = (event, reason) => {
+        if (reason === 'clickaway') {
+            return;
+        }
+        setSnackbarOpen(false);
+    };
+
+    // Fetch información del usuario
+    const fetchUsuario = useCallback(async () => {
         try {
-            const response = await axios.get('/admin-usuarios/me/');
+            const response = await axiosInstance.get('/admin-usuarios/me/');
             setUsuario(response.data);
             setLoading(false);
         } catch (err) {
             setError('Error al obtener información del usuario.');
             setLoading(false);
         }
-    };
+    }, []);
 
-    const fetchStats = async () => {
+    // Fetch estadísticas
+    const fetchStats = useCallback(async () => {
         try {
-            const [usuariosResponse, pedidosResponse, categoriasResponse, itemsResponse] = await Promise.all([
-                axios.get('/admin-usuarios/'),
-                axios.get('/pedidos/'),
-                axios.get('/categorias/'),
-                axios.get('/items/'),
+            const [pedidosResponse, itemsResponse, cartasResponse] = await Promise.all([
+                axiosInstance.get('/pedidos/'),
+                axiosInstance.get('/items/'),
+                axiosInstance.get('/cartas/', { params: { estado: 'Activa' } }),
             ]);
             setStats({
-                usuarios: usuariosResponse.data.length,
                 pedidos: pedidosResponse.data.length,
-                categorias: categoriasResponse.data.length,
                 items: itemsResponse.data.length,
+                cartasActivas: cartasResponse.data.length,
             });
         } catch (err) {
             setError('Error al obtener estadísticas.');
         }
-    };
+    }, []);
+
+    // Fetch transacciones pendientes
+    const fetchPendingTransactions = useCallback(async () => {
+        try {
+            const response = await axiosInstance.get('/transacciones/', {
+                params: {
+                    estado: 'Pendiente',
+                },
+            });
+            setPendingTransactions(response.data.results || []);
+            if (response.data.results.length > 0) {
+                setSnackbarOpen(true);
+            }
+        } catch (err) {
+            console.error('Error al obtener transacciones pendientes:', err);
+        }
+    }, []);
 
     useEffect(() => {
         fetchUsuario();
         fetchStats();
-    }, []);
+        fetchPendingTransactions();
+    }, [fetchUsuario, fetchStats, fetchPendingTransactions]);
 
-    if (loading) return <p className="p-6 text-center text-gray-700">Cargando...</p>;
-    if (error) return <p className="p-6 text-center text-red-500">{error}</p>;
+    if (loading) {
+        return (
+            <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
+                <CircularProgress />
+            </Box>
+        );
+    }
+
+    if (error) {
+        return (
+            <Container>
+                <Alert severity="error">{error}</Alert>
+            </Container>
+        );
+    }
 
     return (
-        <div 
-            className="min-h-screen flex flex-col items-center justify-center bg-cover bg-center"
-            style={{ backgroundImage: `url(${madera})` }}
-        >
-            <div className="bg-white bg-opacity-90 p-8 rounded-lg shadow-lg max-w-4xl w-full">
-                <WelcomeMessage nombre={usuario?.nombre} />
-                <p className="mt-4 text-gray-700 text-lg">
-                    Gestiona usuarios, categorías, ítems y pedidos desde aquí.
-                </p>
+        <StyledContainer>
+            <Overlay>
+                {/* Snackbar para notificaciones de transacciones pendientes */}
+                <Snackbar
+                    open={snackbarOpen}
+                    autoHideDuration={8000}
+                    onClose={handleSnackbarClose}
+                    anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+                >
+                    <NotificationAlert
+                        onClose={handleSnackbarClose}
+                        severity="warning"
+                        sx={{ width: '100%' }}
+                        action={
+                            <Button color="inherit" size="small" component={Link} to="/transacciones">
+                                Revisar
+                            </Button>
+                        }
+                    >
+                        Tienes {pendingTransactions.length} transacción(es) pendiente(s) de actualizar.
+                    </NotificationAlert>
+                </Snackbar>
 
-                {/* Dashboard Cards */}
-                <div className="mt-6 grid grid-cols-2 gap-4">
-                    <div className="bg-blue-500 text-white p-4 rounded-lg shadow-md">
-                        <h3 className="text-lg font-semibold">Usuarios</h3>
-                        <p className="text-3xl font-bold">{stats.usuarios}</p>
-                    </div>
-                    <div className="bg-green-500 text-white p-4 rounded-lg shadow-md">
-                        <h3 className="text-lg font-semibold">Pedidos</h3>
-                        <p className="text-3xl font-bold">{stats.pedidos}</p>
-                    </div>
-                    <div className="bg-yellow-500 text-white p-4 rounded-lg shadow-md">
-                        <h3 className="text-lg font-semibold">Categorías</h3>
-                        <p className="text-3xl font-bold">{stats.categorias}</p>
-                    </div>
-                    <div className="bg-red-500 text-white p-4 rounded-lg shadow-md">
-                        <h3 className="text-lg font-semibold">Ítems</h3>
-                        <p className="text-3xl font-bold">{stats.items}</p>
-                    </div>
-                </div>
+                {/* Mensaje de Bienvenida */}
+                <Box textAlign="center" mb={4}>
+                    <Typography variant="h4" gutterBottom>
+                        ¡Bienvenido, {usuario?.nombre}!
+                    </Typography>
+                    <Typography variant="subtitle1" color="textSecondary">
+                        Gestiona pedidos, ítems, cartas y más desde aquí.
+                    </Typography>
+                </Box>
+
+                {/* Dashboard de Estadísticas */}
+                <Grid container spacing={4}>
+                    {/* Estadística de Pedidos */}
+                    <Grid item xs={12} sm={6} md={4}>
+                        <StatsCard>
+                            <ShoppingCartIcon fontSize="large" />
+                            <Box ml={2}>
+                                <Typography variant="h6">Pedidos</Typography>
+                                <Typography variant="h4">{stats.pedidos}</Typography>
+                            </Box>
+                        </StatsCard>
+                    </Grid>
+
+                    {/* Estadística de Ítems */}
+                    <Grid item xs={12} sm={6} md={4}>
+                        <StatsCard>
+                            <FastfoodIcon fontSize="large" />
+                            <Box ml={2}>
+                                <Typography variant="h6">Ítems</Typography>
+                                <Typography variant="h4">{stats.items}</Typography>
+                            </Box>
+                        </StatsCard>
+                    </Grid>
+
+                    {/* Estadística de Cartas Activas */}
+                    <Grid item xs={12} sm={6} md={4}>
+                        <StatsCard>
+                            <AssignmentIcon fontSize="large" />
+                            <Box ml={2}>
+                                <Typography variant="h6">Cartas Activas</Typography>
+                                <Typography variant="h4">{stats.cartasActivas}</Typography>
+                            </Box>
+                        </StatsCard>
+                    </Grid>
+                </Grid>
 
                 {/* Accesos Rápidos */}
-                <div className="mt-8 grid grid-cols-2 gap-4">
-                    <Button 
-                        handleClick={() => alert('Gestionar Usuarios')}
-                        clicked={false}
-                        handleLogout={() => {}}
-                        usuario={usuario}
-                        className="bg-indigo-600 text-white p-4 rounded-lg shadow-md text-center"
-                    >
-                        Gestionar Usuarios
-                    </Button>
-                    <Button 
-                        handleClick={() => alert('Gestionar Pedidos')}
-                        clicked={false}
-                        handleLogout={() => {}}
-                        usuario={usuario}
-                        className="bg-indigo-600 text-white p-4 rounded-lg shadow-md text-center"
-                    >
-                        Gestionar Pedidos
-                    </Button>
-                    <Button 
-                        handleClick={() => alert('Gestionar Categorías')}
-                        clicked={false}
-                        handleLogout={() => {}}
-                        usuario={usuario}
-                        className="bg-indigo-600 text-white p-4 rounded-lg shadow-md text-center"
-                    >
-                        Gestionar Categorías
-                    </Button>
-                    <Button 
-                        handleClick={() => alert('Gestionar Ítems')}
-                        clicked={false}
-                        handleLogout={() => {}}
-                        usuario={usuario}
-                        className="bg-indigo-600 text-white p-4 rounded-lg shadow-md text-center"
-                    >
-                        Gestionar Ítems
-                    </Button>
-                </div>
+                <Box mt={6}>
+                    <Typography variant="h5" gutterBottom>
+                        Accesos Rápidos
+                    </Typography>
+                    <Grid container spacing={4}>
+                        {/* Gestionar Usuarios */}
+                        <Grid item xs={12} sm={6} md={4}>
+                            <Tooltip title="Gestionar Usuarios">
+                                <QuickAccessButton
+                                    component={Link}
+                                    to="/usuarios"
+                                    fullWidth
+                                    variant="contained"
+                                >
+                                    <Badge badgeContent={0} color="error">
+                                        <ShoppingCartIcon fontSize="large" />
+                                    </Badge>
+                                    <Box ml={2}>
+                                        <Typography variant="button">Usuarios</Typography>
+                                    </Box>
+                                </QuickAccessButton>
+                            </Tooltip>
+                        </Grid>
 
-                {/* Notificaciones */}
-                <div className="mt-8">
-                    <h3 className="text-lg font-semibold text-gray-700">Notificaciones</h3>
-                    <div className="bg-yellow-100 p-4 rounded-lg shadow-md">
-                        <p className="text-gray-700">Nuevos pedidos pendientes de aprobación.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
+                        {/* Gestionar Pedidos */}
+                        <Grid item xs={12} sm={6} md={4}>
+                            <Tooltip title="Gestionar Pedidos">
+                                <QuickAccessButton
+                                    component={Link}
+                                    to="/pedidos"
+                                    fullWidth
+                                    variant="contained"
+                                >
+                                    <ShoppingCartIcon fontSize="large" />
+                                    <Box ml={2}>
+                                        <Typography variant="button">Pedidos</Typography>
+                                    </Box>
+                                </QuickAccessButton>
+                            </Tooltip>
+                        </Grid>
+
+                        {/* Gestionar Comidas */}
+                        <Grid item xs={12} sm={6} md={4}>
+                            <Tooltip title="Gestionar Comidas">
+                                <QuickAccessButton
+                                    component={Link}
+                                    to="/comidas"
+                                    fullWidth
+                                    variant="contained"
+                                >
+                                    <FastfoodIcon fontSize="large" />
+                                    <Box ml={2}>
+                                        <Typography variant="button">Comidas</Typography>
+                                    </Box>
+                                </QuickAccessButton>
+                            </Tooltip>
+                        </Grid>
+
+                        {/* Gestionar Cartas */}
+                        <Grid item xs={12} sm={6} md={4}>
+                            <Tooltip title="Gestionar Cartas">
+                                <QuickAccessButton
+                                    component={Link}
+                                    to="/cartas"
+                                    fullWidth
+                                    variant="contained"
+                                >
+                                    <AssignmentIcon fontSize="large" />
+                                    <Box ml={2}>
+                                        <Typography variant="button">Cartas</Typography>
+                                    </Box>
+                                </QuickAccessButton>
+                            </Tooltip>
+                        </Grid>
+
+                        {/* Gestionar Transacciones */}
+                        <Grid item xs={12} sm={6} md={4}>
+                            <Tooltip title="Gestionar Transacciones">
+                                <QuickAccessButton
+                                    component={Link}
+                                    to="/transacciones"
+                                    fullWidth
+                                    variant="contained"
+                                >
+                                    <Badge badgeContent={pendingTransactions.length} color="error">
+                                        <TransaccionIcon fontSize="large" />
+                                    </Badge>
+                                    <Box ml={2}>
+                                        <Typography variant="button">Transacciones</Typography>
+                                    </Box>
+                                </QuickAccessButton>
+                            </Tooltip>
+                        </Grid>
+
+                        {/* Chat */}
+                        <Grid item xs={12} sm={6} md={4}>
+                            <Tooltip title="Chat">
+                                <QuickAccessButton
+                                    component={Link}
+                                    to="/chat"
+                                    fullWidth
+                                    variant="contained"
+                                >
+                                    <ChatIcon fontSize="large" />
+                                    <Box ml={2}>
+                                        <Typography variant="button">Chat</Typography>
+                                    </Box>
+                                </QuickAccessButton>
+                            </Tooltip>
+                        </Grid>
+                    </Grid>
+                </Box>
+
+                {/* Sección de Notificaciones Adicionales */}
+                <Box mt={6}>
+                    <Typography variant="h5" gutterBottom>
+                        Notificaciones
+                    </Typography>
+                    <Grid container spacing={4}>
+                        {/* Notificación de Transacciones Pendientes */}
+                        <Grid item xs={12} md={6}>
+                            <Card sx={{ backgroundColor: 'warning.light', color: 'warning.contrastText' }}>
+                                <CardHeader
+                                    avatar={<InfoIcon />}
+                                    title="Transacciones Pendientes"
+                                    subheader={`Hay ${pendingTransactions.length} transacción(es) pendiente(s) de actualizar.`}
+                                />
+                                <CardContent>
+                                    {pendingTransactions.length > 0 ? (
+                                        <>
+                                            <List>
+                                                {pendingTransactions.slice(0, 3).map((transaccion) => (
+                                                    <ListItem key={transaccion.id}>
+                                                        <ListItemText
+                                                            primary={`Pedido: ${transaccion.pedido_codigo_pedido || 'N/A'}`}
+                                                            secondary={`Usuario: ${transaccion.usuario_nombre || 'N/A'}`}
+                                                        />
+                                                    </ListItem>
+                                                ))}
+                                                {pendingTransactions.length > 3 && (
+                                                    <ListItem>
+                                                        <ListItemText
+                                                            primary={`... y ${pendingTransactions.length - 3} más`}
+                                                        />
+                                                    </ListItem>
+                                                )}
+                                            </List>
+                                            <Box mt={2}>
+                                                <Button
+                                                    variant="contained"
+                                                    color="inherit"
+                                                    component={Link}
+                                                    to="/transacciones"
+                                                >
+                                                    Revisar Transacciones
+                                                </Button>
+                                            </Box>
+                                        </>
+                                    ) : (
+                                        <Typography variant="body1">
+                                            No hay transacciones pendientes.
+                                        </Typography>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </Grid>
+
+                        {/* Notificación de Nuevos Pedidos */}
+                        <Grid item xs={12} md={6}>
+                            <Card sx={{ backgroundColor: 'info.light', color: 'info.contrastText' }}>
+                                <CardHeader
+                                    avatar={<InfoIcon />}
+                                    title="Nuevos Pedidos"
+                                    subheader="Revisa los nuevos pedidos para una respuesta rápida."
+                                />
+                                <CardContent>
+                                    <Typography variant="body1">
+                                        Tienes {stats.pedidos} pedidos en total. Asegúrate de revisarlos y gestionarlos
+                                        a tiempo para mantener la satisfacción de los clientes.
+                                    </Typography>
+                                    <Box mt={2}>
+                                        <Button
+                                            variant="contained"
+                                            color="inherit"
+                                            component={Link}
+                                            to="/pedidos"
+                                        >
+                                            Revisar Pedidos
+                                        </Button>
+                                    </Box>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    </Grid>
+                </Box>
+            </Overlay>
+
+            {/* Snackbar para notificaciones de éxito (Opcional) */}
+            <Snackbar
+                open={snackbarOpen}
+                autoHideDuration={6000}
+                onClose={handleSnackbarClose}
+                message="Operación realizada con éxito"
+                action={
+                    <IconButton size="small" aria-label="close" color="inherit" onClick={handleSnackbarClose}>
+                        <LogoutIcon fontSize="small" />
+                    </IconButton>
+                }
+            />
+        </StyledContainer>
     );
+
 };
 
 export default Home;
